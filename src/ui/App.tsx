@@ -5,19 +5,16 @@ import Header from './components/Header'
 import Titlebar from './components/Titlebar'
 import ProtectedRoute from './components/ProtectedRoute'
 import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
+
 import Dashboard from './pages/Dashboard'
-import ProductsView from './pages/ProductsView'
-import OrdersPage from './pages/OrdersPage'
-import VendorDetails from './components/views/VendorDetails'
-import CustomerDetails from './components/views/CustomerDetails'
-import InvoiceBills from './components/views/InvoiceBills'
-import ExpensesDetails from './components/views/ExpensesDetails'
-import InventoryReport from './components/views/InventoryReport'
-import BalanceSheet from './components/views/BalanceSheet'
-import ProfitLossReport from './components/views/ProfitLossReport'
-import DayClosingReport from './components/views/DayClosingReport'
-import BankAccountTransaction from './components/views/BankAccountTransaction'
+import VendorsPage from './pages/vendors/VendorsPage'
+import CustomersPage from './pages/customers/CustomersPage'
+import InventoryPage from './pages/inventory/InventoryPage'
+import VendorLedgerPage from './pages/vendor-ledger/VendorLedgerPage'
+import CustomerLedgerPage from './pages/customer-ledger/CustomerLedgerPage'
+import ExpensesPage from './pages/expenses/ExpensesPage'
+import DayClosingPage from './pages/day-closing/DayClosingPage'
+import SettingsPage from './pages/settings/SettingsPage'
 
 function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -44,21 +41,17 @@ function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/register" element={<RegisterPage />} />
       <Route element={<ProtectedRoute />}>
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/products" element={<ProductsView />} />
-          <Route path="/orders" element={<OrdersPage />} />
-          <Route path="/vendor-details" element={<VendorDetails />} />
-          <Route path="/customer-details" element={<CustomerDetails />} />
-          <Route path="/invoices" element={<InvoiceBills />} />
-          <Route path="/expenses" element={<ExpensesDetails />} />
-          <Route path="/inventory" element={<InventoryReport />} />
-          <Route path="/balance-sheet" element={<BalanceSheet />} />
-          <Route path="/profit-loss" element={<ProfitLossReport />} />
-          <Route path="/day-closing" element={<DayClosingReport />} />
-          <Route path="/bank-transactions" element={<BankAccountTransaction />} />
+          <Route path="/vendors" element={<VendorsPage />} />
+          <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/inventory" element={<InventoryPage />} />
+          <Route path="/vendor-ledger" element={<VendorLedgerPage />} />
+          <Route path="/customer-ledger" element={<CustomerLedgerPage />} />
+          <Route path="/expenses" element={<ExpensesPage />} />
+          <Route path="/day-closing" element={<DayClosingPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

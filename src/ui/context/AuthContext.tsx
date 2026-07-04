@@ -1,45 +1,49 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { api } from '../services/api'
 
 interface User {
-  username: string
-  password: string
-  fullName: string
+  id: string
+  full_name: string
   email: string
+  username: string
 }
 
 interface AuthContextType {
   currentUser: User | null
-  users: User[]
-  login: (email: string, password: string) => boolean
-  register: (fullName: string, username: string, password: string, email: string) => void
+  loading: boolean
+  hasOwner: boolean
+  login: (email: string, password: string) => Promise<boolean>
   logout: () => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
-const defaultUser: User = { username: 'admin', password: 'admin', fullName: 'Shahzeb (Administrator)', email: 'admin@admin.com' }
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [users, setUsers] = useState<User[]>([defaultUser])
   const [currentUser, setCurrentUser] = useState<User | null>(null)
+  const [hasOwner, setHasOwner] = useState(false)
+  const [loading, setLoading] = useState(true)
 
-  const login = (email: string, password: string) => {
-    const match = users.find((u) => u.email === email && u.password === password)
-    if (match) {
-      setCurrentUser(match)
+  useEffect(() => {
+    const e = window.electron as any
+    e.auth.ownerStatus().then((status: { hasOwner: boolean }) => {
+      setHasOwner(status.hasOwner)
+      setLoading(false)
+    })
+  }, [])
+
+  const login = async (email: string, password: string) => {
+    const user = await api.auth.login(email, password) as User | null
+    if (user) {
+      setCurrentUser(user)
       return true
     }
     return false
   }
 
-  const register = (fullName: string, username: string, password: string, email: string) => {
-    setUsers((prev) => [...prev, { username, password, fullName, email }])
-  }
-
   const logout = () => setCurrentUser(null)
 
   return (
-    <AuthContext.Provider value={{ currentUser, users, login, register, logout }}>
+    <AuthContext.Provider value={{ currentUser, loading, hasOwner, login, logout }}>
       {children}
     </AuthContext.Provider>
   )

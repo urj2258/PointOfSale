@@ -32,11 +32,11 @@ export default function ProfileModal({ open, onClose }: Props) {
       >
         <div className="flex items-center gap-3.5 mb-4">
           <div className="w-12 h-12 rounded-full bg-gradient-to-br from-accent-orange to-accent-pink flex items-center justify-center text-lg font-bold text-white shadow-md shrink-0">
-            {currentUser?.fullName?.charAt(0) || 'U'}
+            {currentUser?.full_name?.charAt(0) || 'U'}
           </div>
           <div className="text-left min-w-0">
             <h3 className="text-sm font-semibold text-brand-text-primary leading-tight truncate">
-              {currentUser?.fullName || 'User'}
+              {currentUser?.full_name || 'User'}
             </h3>
             <p className="text-xs text-brand-text-muted truncate">
               @{currentUser?.username || 'username'}

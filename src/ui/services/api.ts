@@ -1,0 +1,68 @@
+const e = window.electron as any
+
+export const api = {
+  vendors: {
+    list: (search?: string, page?: number, limit?: number) => e.vendors.list(search, page, limit),
+    get: (id: string) => e.vendors.get(id),
+    create: (name: string, phone?: string, address?: string, mill_name?: string) => e.vendors.create(name, phone, address, mill_name),
+    update: (id: string, name: string, phone?: string, address?: string, mill_name?: string) => e.vendors.update(id, name, phone, address, mill_name),
+    delete: (id: string) => e.vendors.delete(id),
+    outstanding: (id: string) => e.vendors.outstanding(id),
+  },
+  customers: {
+    list: (search?: string, page?: number, limit?: number) => e.customers.list(search, page, limit),
+    get: (id: string) => e.customers.get(id),
+    create: (name: string, phone?: string, address?: string, shop_name?: string) => e.customers.create(name, phone, address, shop_name),
+    update: (id: string, name: string, phone?: string, address?: string, shop_name?: string) => e.customers.update(id, name, phone, address, shop_name),
+    delete: (id: string) => e.customers.delete(id),
+    outstanding: (id: string) => e.customers.outstanding(id),
+  },
+  inventory: {
+    list: (search?: string, page?: number, limit?: number) => e.inventory.list(search, page, limit),
+    get: (id: string) => e.inventory.get(id),
+    create: (name: string, unit: string, quantity: number, description?: string) => e.inventory.create(name, unit, quantity, description),
+    update: (id: string, name: string, unit: string, description?: string) => e.inventory.update(id, name, unit, description),
+    adjustStock: (id: string, quantityChange: number) => e.inventory.adjustStock(id, quantityChange),
+    delete: (id: string) => e.inventory.delete(id),
+    lowStockCount: (threshold?: number) => e.inventory.lowStockCount(threshold),
+  },
+  vendorLedger: {
+    list: (vendorId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.vendorLedger.list(vendorId, dateFrom, dateTo, page, limit),
+    get: (id: string) => e.vendorLedger.get(id),
+    create: (vendorId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.vendorLedger.create(vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+    update: (id: string, paidAmount: number, description?: string, vehicleNumber?: string) => e.vendorLedger.update(id, paidAmount, description, vehicleNumber),
+    delete: (id: string) => e.vendorLedger.delete(id),
+  },
+  customerLedger: {
+    list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.customerLedger.list(customerId, dateFrom, dateTo, page, limit),
+    get: (id: string) => e.customerLedger.get(id),
+    create: (customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.create(customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+    update: (id: string, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.update(id, paidAmount, description, vehicleNumber),
+    delete: (id: string) => e.customerLedger.delete(id),
+  },
+  expenseCategories: {
+    list: () => e.expenseCategories.list(),
+    create: (name: string) => e.expenseCategories.create(name),
+    update: (id: string, name: string) => e.expenseCategories.update(id, name),
+    delete: (id: string) => e.expenseCategories.delete(id),
+  },
+  expenses: {
+    list: (categoryId?: string, month?: string, page?: number, limit?: number) => e.expenses.list(categoryId, month, page, limit),
+    create: (categoryId: string, transactionDatetime: string, amount: number, description?: string) => e.expenses.create(categoryId, transactionDatetime, amount, description),
+    update: (id: string, categoryId: string, transactionDatetime: string, amount: number, description?: string) => e.expenses.update(id, categoryId, transactionDatetime, amount, description),
+    delete: (id: string) => e.expenses.delete(id),
+    monthly: () => e.expenses.monthly(),
+  },
+  dayClosing: {
+    list: (page?: number, limit?: number) => e.dayClosing.list(page, limit),
+    get: (date: string) => e.dayClosing.get(date),
+    generate: (businessDate: string) => e.dayClosing.generate(businessDate),
+  },
+  dashboard: {
+    stats: () => e.dashboard.stats(),
+  },
+  auth: {
+    login: (email: string, password: string) => e.auth.login(email, password),
+    ownerStatus: () => e.auth.ownerStatus(),
+  },
+}

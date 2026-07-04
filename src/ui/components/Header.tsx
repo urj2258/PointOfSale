@@ -15,8 +15,8 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   const [notifOpen, setNotifOpen] = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
 
-  const firstName = currentUser?.fullName?.split(' ')[0] || 'User'
-  const initial = currentUser?.fullName?.charAt(0) || 'U'
+  const firstName = currentUser?.full_name?.split(' ')[0] || 'User'
+  const initial = currentUser?.full_name?.charAt(0) || 'U'
 
   return (
     <header className="relative z-50 flex items-center justify-between h-16 px-6 bg-white/20 dark:bg-white/[0.04] backdrop-blur-2xl border-b border-white/15 dark:border-white/[0.06]">

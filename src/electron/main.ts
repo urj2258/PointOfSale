@@ -2,6 +2,8 @@ import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path'
 import { isDev } from './utils.js';
 import { getPreloadPath } from './pathResolver.js';
+import { initDatabase, closeDatabase } from './database.js';
+import { registerAllIpcHandlers } from './ipc/index.js';
 
 let win: BrowserWindow | null = null
 
@@ -42,5 +44,11 @@ ipcMain.on('window:close', () => {
 })
 
 app.whenReady().then(() => {
+  initDatabase()
+  registerAllIpcHandlers()
   createWindow()
+})
+
+app.on('before-quit', () => {
+  closeDatabase()
 })
