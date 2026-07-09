@@ -1,19 +1,26 @@
 import { useEffect } from 'react'
 import { createPortal } from 'react-dom'
+import { useNotifications, type AppNotification } from '../context/NotificationContext'
 
 interface Props {
   open: boolean
   onClose: () => void
 }
 
-const notifications = [
-  { id: 1, title: 'New order received', desc: 'Order #1024 from Sarah Ahmed — $240.00', time: '2 min ago', color: 'accent-cyan' },
-  { id: 2, title: 'Low stock alert', desc: 'Wireless Mouse is down to 3 units', time: '15 min ago', color: 'accent-warning' },
-  { id: 3, title: 'Payment received', desc: 'Invoice #INV-023 — $1,200.00 cleared', time: '1 hr ago', color: 'accent-success' },
-  { id: 4, title: 'New vendor registered', desc: 'TechSupply Co. joined your network', time: '3 hr ago', color: 'accent-lavender' },
-]
+function relativeTime(timestamp: number): string {
+  const diff = Date.now() - timestamp
+  const mins = Math.floor(diff / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} min ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs} hr ago`
+  const days = Math.floor(hrs / 24)
+  return `${days} day ago`
+}
 
 export default function NotificationModal({ open, onClose }: Props) {
+  const { notifications } = useNotifications()
+
   useEffect(() => {
     if (!open) return
     const handler = (e: KeyboardEvent) => {
@@ -33,24 +40,35 @@ export default function NotificationModal({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/20 dark:border-white/[0.06]">
-          <h2 className="text-base font-semibold text-brand-text-primary">Notifications</h2>
+          <h2 className="text-base font-semibold text-brand-text-primary">
+            Notifications
+            {notifications.length > 0 && (
+              <span className="ml-2 text-xs font-normal text-brand-text-muted">({notifications.length})</span>
+            )}
+          </h2>
           <button onClick={onClose} className="w-7 h-7 rounded-full flex items-center justify-center text-brand-text-muted hover:text-brand-text-primary hover:bg-white/30 dark:hover:bg-white/[0.08] transition-colors">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
           </button>
         </div>
         <div className="max-h-80 overflow-y-auto">
-          {notifications.map((n) => (
-            <div key={n.id} className="flex items-start gap-3 px-5 py-3.5 hover:bg-white/30 dark:hover:bg-white/[0.04] transition-colors cursor-pointer border-b border-white/10 dark:border-white/[0.04] last:border-0">
-              <div className={`w-8 h-8 rounded-full bg-${n.color}/20 flex items-center justify-center shrink-0 mt-0.5`}>
-                <div className={`w-2 h-2 rounded-full bg-${n.color}`} />
-              </div>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-brand-text-primary">{n.title}</p>
-                <p className="text-xs text-brand-text-muted mt-0.5">{n.desc}</p>
-                <p className="text-[10px] text-brand-text-muted/60 mt-1">{n.time}</p>
-              </div>
+          {notifications.length === 0 ? (
+            <div className="px-5 py-8 text-center text-sm text-brand-text-muted">
+              No notifications yet
             </div>
-          ))}
+          ) : (
+            notifications.slice(0, 5).map((n: AppNotification) => (
+              <div key={n.id} className="flex items-start gap-3 px-5 py-3.5 hover:bg-white/30 dark:hover:bg-white/[0.04] transition-colors cursor-pointer border-b border-white/10 dark:border-white/[0.04] last:border-0">
+                <div className={`w-8 h-8 rounded-full bg-${n.color}/20 flex items-center justify-center shrink-0 mt-0.5`}>
+                  <div className={`w-2 h-2 rounded-full bg-${n.color}`} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-brand-text-primary">{n.title}</p>
+                  <p className="text-xs text-brand-text-muted mt-0.5 whitespace-pre-wrap break-words">{n.desc}</p>
+                  <p className="text-[10px] text-brand-text-muted/60 mt-1">{relativeTime(n.timestamp)}</p>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
     </div>,

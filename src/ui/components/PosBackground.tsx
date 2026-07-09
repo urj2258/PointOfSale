@@ -1,9 +1,9 @@
 const COLORS = {
-  lime: 'rgba(214,244,74,',
-  purple: 'rgba(162,134,255,',
-  lavender: 'rgba(232,223,255,',
-  pink: 'rgba(248,200,216,',
-  cyan: 'rgba(134, 223, 255,',
+  g1: '--gradient-rgb-1',
+  g2: '--gradient-rgb-2',
+  g3: '--gradient-rgb-3',
+  g4: '--gradient-rgb-4',
+  g5: '--gradient-rgb-5',
 }
 
 function Bubbles({ count, className }: { count: number; className?: string }) {
@@ -13,7 +13,7 @@ function Bubbles({ count, className }: { count: number; className?: string }) {
     left: Math.random() * 100,
     delay: Math.random() * 8,
     duration: 8 + Math.random() * 12,
-    color: [COLORS.lime, COLORS.purple, COLORS.lavender, COLORS.pink][i % 4],
+    color: [COLORS.g1, COLORS.g2, COLORS.g3, COLORS.g4][i % 4],
   }))
 
   return (
@@ -27,8 +27,8 @@ function Bubbles({ count, className }: { count: number; className?: string }) {
             height: b.size,
             left: `${b.left}%`,
             bottom: '-10%',
-            background: `${b.color}0.12)`,
-            boxShadow: `0 0 ${b.size}px ${b.color}0.08)`,
+            background: `rgba(var(${b.color}), 0.12)`,
+            boxShadow: `0 0 ${b.size}px rgba(var(${b.color}), 0.08)`,
             animation: `bubble-float ${b.duration}s ease-in-out ${b.delay}s infinite`,
           }}
         />
@@ -39,11 +39,11 @@ function Bubbles({ count, className }: { count: number; className?: string }) {
 
 function GlowingOrbs() {
   const orbs = [
-    { top: '15%', left: '10%', size: 180, color: 'rgba(214,244,74,0.12)', blur: 120, delay: '0s' },
-    { top: '60%', left: '75%', size: 220, color: 'rgba(162,134,255,0.1)', blur: 150, delay: '-2s' },
-    { top: '75%', left: '20%', size: 160, color: 'rgba(232,223,255,0.15)', blur: 100, delay: '-4s' },
-    { top: '30%', left: '80%', size: 140, color: 'rgba(248,200,216,0.12)', blur: 100, delay: '-1s' },
-    { top: '50%', left: '50%', size: 300, color: 'rgba(214,244,74,0.06)', blur: 200, delay: '-3s' },
+    { top: '15%', left: '10%', size: 180, color: '1', opacity: '0.12', blur: 120, delay: '0s' },
+    { top: '60%', left: '75%', size: 220, color: '2', opacity: '0.1', blur: 150, delay: '-2s' },
+    { top: '75%', left: '20%', size: 160, color: '3', opacity: '0.15', blur: 100, delay: '-4s' },
+    { top: '30%', left: '80%', size: 140, color: '4', opacity: '0.12', blur: 100, delay: '-1s' },
+    { top: '50%', left: '50%', size: 300, color: '1', opacity: '0.06', blur: 200, delay: '-3s' },
   ]
 
   return (
@@ -57,7 +57,7 @@ function GlowingOrbs() {
             height: o.size,
             top: o.top,
             left: o.left,
-            background: `radial-gradient(circle, ${o.color} 0%, transparent 70%)`,
+            background: `radial-gradient(circle, rgba(var(--gradient-rgb-${o.color}), ${o.opacity}) 0%, transparent 70%)`,
             filter: `blur(${o.blur}px)`,
             animation: `glow-drift ${12 + i * 2}s ease-in-out ${o.delay} infinite`,
           }}
@@ -83,7 +83,7 @@ function ScanLines() {
           style={{
             top: p.top,
             animation: `scan-beam ${4 + i * 0.5}s linear ${p.delay} infinite`,
-            background: 'linear-gradient(90deg, transparent, rgba(214,244,74,0.25), rgba(162,134,255,0.25), transparent)',
+            background: 'linear-gradient(90deg, transparent, rgba(var(--gradient-rgb-1), 0.25), rgba(var(--gradient-rgb-2), 0.25), transparent)',
           }}
         />
       ))}
@@ -99,7 +99,7 @@ function DataStreams() {
     duration: 3 + Math.random() * 4,
     width: 1 + Math.random() * 2,
     height: 40 + Math.random() * 80,
-    color: [COLORS.lime, COLORS.purple, COLORS.lavender][i % 3],
+    color: [COLORS.g1, COLORS.g2, COLORS.g3][i % 3],
   }))
 
   return (
@@ -113,7 +113,7 @@ function DataStreams() {
             width: s.width,
             height: s.height,
             top: -s.height,
-            background: `linear-gradient(to bottom, transparent, ${s.color}0.15)`,
+            background: `linear-gradient(to bottom, transparent, rgba(var(${s.color}), 0.15))`,
             animation: `data-stream ${s.duration}s ease-in-out ${s.delay}s infinite`,
           }}
         />
@@ -257,11 +257,11 @@ export default function PosBackground() {
       `}</style>
       <div className="absolute inset-0" style={{
         background: `
-          radial-gradient(ellipse at 15% 45%, rgba(214, 244, 74, 0.4) 0%, transparent 60%),
-          radial-gradient(ellipse at 85% 25%, rgba(162, 134, 255, 0.35) 0%, transparent 55%),
-          radial-gradient(ellipse at 45% 85%, rgba(232, 223, 255, 0.5) 0%, transparent 50%),
-          radial-gradient(ellipse at 75% 70%, rgba(248, 200, 216, 0.3) 0%, transparent 50%),
-          radial-gradient(ellipse at 50% 30%, rgba(214, 244, 74, 0.15) 0%, transparent 60%)
+          radial-gradient(ellipse at 15% 45%, rgba(var(--gradient-rgb-1), 0.4) 0%, transparent 60%),
+          radial-gradient(ellipse at 85% 25%, rgba(var(--gradient-rgb-2), 0.35) 0%, transparent 55%),
+          radial-gradient(ellipse at 45% 85%, rgba(var(--gradient-rgb-3), 0.5) 0%, transparent 50%),
+          radial-gradient(ellipse at 75% 70%, rgba(var(--gradient-rgb-4), 0.3) 0%, transparent 50%),
+          radial-gradient(ellipse at 50% 30%, rgba(var(--gradient-rgb-5), 0.15) 0%, transparent 60%)
         `,
       }} />
 
@@ -292,13 +292,13 @@ export default function PosBackground() {
         backgroundSize: '40px 40px'
       }} />
 
-      <div className="absolute top-1/4 left-0 w-48 h-px bg-gradient-to-r from-transparent via-brand-primary/20 to-transparent" style={{ animation: 'scan-beam 4s linear 0s infinite' }} />
-      <div className="absolute top-2/4 right-0 w-48 h-px bg-gradient-to-r from-transparent via-accent-purple/15 to-transparent" style={{ animation: 'scan-beam 5s linear 2s infinite' }} />
-      <div className="absolute top-3/4 left-0 w-48 h-px bg-gradient-to-r from-transparent via-accent-orange/10 to-transparent" style={{ animation: 'scan-beam 6s linear 4s infinite' }} />
+      <div className="absolute top-1/4 left-0 w-48 h-px" style={{ animation: 'scan-beam 4s linear 0s infinite', background: 'linear-gradient(90deg, transparent, rgba(var(--gradient-rgb-1), 0.2), transparent)' }} />
+      <div className="absolute top-2/4 right-0 w-48 h-px" style={{ animation: 'scan-beam 5s linear 2s infinite', background: 'linear-gradient(90deg, transparent, rgba(var(--gradient-rgb-2), 0.15), transparent)' }} />
+      <div className="absolute top-3/4 left-0 w-48 h-px" style={{ animation: 'scan-beam 6s linear 4s infinite', background: 'linear-gradient(90deg, transparent, rgba(var(--gradient-rgb-3), 0.1), transparent)' }} />
 
-      <div className="absolute top-[30%] right-[15%] w-1 h-1 rounded-full bg-brand-primary/30" style={{ animation: 'blink-dot 1.5s ease-in-out 0s infinite', boxShadow: '0 0 6px 2px rgba(214,244,74,0.2)' }} />
-      <div className="absolute top-[60%] left-[20%] w-1 h-1 rounded-full bg-accent-purple/30" style={{ animation: 'blink-dot 1.8s ease-in-out 0.5s infinite', boxShadow: '0 0 6px 2px rgba(162,134,255,0.2)' }} />
-      <div className="absolute top-[40%] left-[55%] w-1 h-1 rounded-full bg-accent-orange/30" style={{ animation: 'blink-dot 2s ease-in-out 1s infinite', boxShadow: '0 0 6px 2px rgba(248,200,216,0.2)' }} />
+      <div className="absolute top-[30%] right-[15%] w-1 h-1 rounded-full" style={{ animation: 'blink-dot 1.5s ease-in-out 0s infinite', background: 'rgba(var(--gradient-rgb-1), 0.3)', boxShadow: '0 0 6px 2px rgba(var(--gradient-rgb-1), 0.2)' }} />
+      <div className="absolute top-[60%] left-[20%] w-1 h-1 rounded-full" style={{ animation: 'blink-dot 1.8s ease-in-out 0.5s infinite', background: 'rgba(var(--gradient-rgb-2), 0.3)', boxShadow: '0 0 6px 2px rgba(var(--gradient-rgb-2), 0.2)' }} />
+      <div className="absolute top-[40%] left-[55%] w-1 h-1 rounded-full" style={{ animation: 'blink-dot 2s ease-in-out 1s infinite', background: 'rgba(var(--gradient-rgb-4), 0.3)', boxShadow: '0 0 6px 2px rgba(var(--gradient-rgb-4), 0.2)' }} />
     </div>
   )
 }

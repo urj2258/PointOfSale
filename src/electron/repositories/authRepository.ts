@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 
 export interface UserRow {
@@ -9,12 +10,16 @@ export interface UserRow {
   password: string
   created_at: string
   updated_at: string
+  deleted_at: string | null
+  synced: number
 }
 
 export function loginUser(email: string, password: string) {
   const db = getDatabase();
-  const user = db.prepare('SELECT * FROM users WHERE email = ? AND password = ?').get(email, password) as UserRow | undefined;
+  const user = db.prepare('SELECT * FROM users WHERE email = ? AND deleted_at IS NULL').get(email) as UserRow | undefined;
   if (!user) return null;
+  const match = bcrypt.compareSync(password, user.password);
+  if (!match) return null;
   const { password: _, ...safe } = user;
   return safe;
 }
@@ -25,10 +30,11 @@ export function registerOwner(fullName: string, email: string, username: string,
   if (existingCount > 0) throw new Error('An owner already exists. Only one owner account is allowed.');
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
+  const hashedPassword = bcrypt.hashSync(password, 10);
   db.prepare(`
     INSERT INTO users (id, full_name, email, username, password, created_at, updated_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, fullName, email, username, password, now, now);
+  `).run(id, fullName, email, username, hashedPassword, now, now);
   return { id, full_name: fullName, email, username, created_at: now, updated_at: now };
 }
 

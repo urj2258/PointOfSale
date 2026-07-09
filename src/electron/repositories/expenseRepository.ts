@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 
 export interface ExpenseCategoryRow {
@@ -19,7 +20,7 @@ export interface ExpenseRow {
   created_at: string
   updated_at: string
   deleted_at: string | null
-  sycned: number
+  synced: number
 }
 
 export function getAllExpenseCategories() {
@@ -37,15 +38,15 @@ export function createExpenseCategory(name: string) {
 
 export function updateExpenseCategory(id: string, name: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE expense_categories SET name = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL').run(name, now, id);
+  const existing = db.prepare('SELECT * FROM expense_categories WHERE id = ? AND deleted_at IS NULL').get(id);
+  if (!existing) throw new Error('Expense category not found');
+  updateRow(db, 'expense_categories', id, { name });
   return db.prepare('SELECT * FROM expense_categories WHERE id = ?').get(id) as ExpenseCategoryRow;
 }
 
 export function deleteExpenseCategory(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE expense_categories SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+  softDeleteRow(db, 'expense_categories', id);
 }
 
 export function getExpenses(categoryId?: string, month?: string, page = 1, limit = 20) {
@@ -101,18 +102,13 @@ export function getExpenseById(id: string) {
 
 export function updateExpense(id: string, categoryId: string, transactionDatetime: string, amount: number, description?: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE expenses SET category_id = ?, transaction_datetime = ?, amount = ?, description = ?, updated_at = ?
-    WHERE id = ? AND deleted_at IS NULL
-  `).run(categoryId, transactionDatetime, amount, description ?? null, now, id);
+  updateRow(db, 'expenses', id, { category_id: categoryId, transaction_datetime: transactionDatetime, amount, description: description ?? null });
   return getExpenseById(id);
 }
 
 export function deleteExpense(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+  softDeleteRow(db, 'expenses', id);
 }
 
 export function getTodayExpenseTotal() {

@@ -25,6 +25,32 @@ export function getDashboardStats() {
     FROM expenses WHERE deleted_at IS NULL AND transaction_datetime LIKE ?
   `).get(`${today}%`) as { total: number }).total;
 
+  const todayInvoiceSales = (db.prepare(`
+    SELECT COALESCE(SUM(total), 0) as total
+    FROM invoices WHERE deleted_at IS NULL AND issue_date = ?
+  `).get(today) as { total: number }).total;
+
+  const todayVendorInvoicePurchases = (db.prepare(`
+    SELECT COALESCE(SUM(total), 0) as total
+    FROM vendor_invoices WHERE deleted_at IS NULL AND issue_date = ?
+  `).get(today) as { total: number }).total;
+
+  const pendingInvoices = (db.prepare(`
+    SELECT COUNT(*) as count FROM invoices WHERE deleted_at IS NULL AND status = 'Pending'
+  `).get() as { count: number }).count;
+
+  const overdueInvoices = (db.prepare(`
+    SELECT COUNT(*) as count FROM invoices WHERE deleted_at IS NULL AND status = 'Overdue'
+  `).get() as { count: number }).count;
+
+  const pendingVendorInvoices = (db.prepare(`
+    SELECT COUNT(*) as count FROM vendor_invoices WHERE deleted_at IS NULL AND status = 'Pending'
+  `).get() as { count: number }).count;
+
+  const overdueVendorInvoices = (db.prepare(`
+    SELECT COUNT(*) as count FROM vendor_invoices WHERE deleted_at IS NULL AND status = 'Overdue'
+  `).get() as { count: number }).count;
+
   const recentTransactions = db.prepare(`
     SELECT 'Sale' as type, cl.transaction_datetime, c.name as party, cl.total_payment as amount
     FROM customer_ledger cl
@@ -51,6 +77,12 @@ export function getDashboardStats() {
     todaySales,
     todayPurchases,
     todayExpenses,
+    todayInvoiceSales,
+    todayVendorInvoicePurchases,
+    pendingInvoices,
+    overdueInvoices,
+    pendingVendorInvoices,
+    overdueVendorInvoices,
     recentTransactions,
     lowStockItems,
   };

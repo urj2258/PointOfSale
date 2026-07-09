@@ -1,7 +1,11 @@
 {
   "appId": "com.shahzeb.pos",
   "files": ["dist-electron", "dist-react"],
-  "extraResources": ["dist-electron/preload.cjs", "src/assets/**"],
+  "extraResources": [
+    "dist-electron/preload.cjs",
+    "src/assets/**",
+    ".env"
+  ],
   "icon": "./desktopIcon.png",
   "mac": {
     "target": "dmg"
@@ -11,7 +15,7 @@
     "category": "Utility"
   },
   "win": {
-    "target": ["portable", "msi"]
+    "target": [ "msi"]
   },
   "msi": {
     "oneClick": false,

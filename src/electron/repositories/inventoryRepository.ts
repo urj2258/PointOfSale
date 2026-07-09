@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 
 export interface InventoryRow {
@@ -54,29 +55,23 @@ export function createInventoryItem(name: string, unit: string, quantity: number
 
 export function updateInventoryItem(id: string, name: string, unit: string, description?: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE inventory SET name = ?, unit = ?, description = ?, updated_at = ?
-    WHERE id = ? AND deleted_at IS NULL
-  `).run(name, unit, description ?? null, now, id);
+  updateRow(db, 'inventory', id, { name, unit, description: description ?? null });
   return getInventoryById(id);
 }
 
 export function adjustStock(id: string, quantityChange: number) {
   const db = getDatabase();
-  const now = new Date().toISOString();
   const item = getInventoryById(id);
   if (!item) throw new Error('Inventory item not found');
   const newQty = item.quantity + quantityChange;
   if (newQty < 0) throw new Error('Insufficient stock');
-  db.prepare('UPDATE inventory SET quantity = ?, updated_at = ? WHERE id = ?').run(newQty, now, id);
+  updateRow(db, 'inventory', id, { quantity: newQty });
   return getInventoryById(id);
 }
 
 export function softDeleteInventoryItem(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE inventory SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+  softDeleteRow(db, 'inventory', id);
 }
 
 export function getLowStockCount(threshold = 10) {

@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 
 export interface CustomerRow {
@@ -49,18 +50,13 @@ export function createCustomer(name: string, phone?: string, address?: string, s
 
 export function updateCustomer(id: string, name: string, phone?: string, address?: string, shop_name?: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE customers SET name = ?, phone = ?, address = ?, shop_name = ?, updated_at = ?
-    WHERE id = ? AND deleted_at IS NULL
-  `).run(name, phone ?? null, address ?? null, shop_name ?? null, now, id);
+  updateRow(db, 'customers', id, { name, phone: phone ?? null, address: address ?? null, shop_name: shop_name ?? null });
   return getCustomerById(id);
 }
 
 export function softDeleteCustomer(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE customers SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+  softDeleteRow(db, 'customers', id);
 }
 
 export function getCustomerOutstanding(id: string) {

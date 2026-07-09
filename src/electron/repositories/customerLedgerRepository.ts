@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 
 export interface CustomerLedgerRow {
@@ -84,7 +85,7 @@ export function createCustomerLedgerEntry(
   `);
 
   const updateStock = db.prepare(`
-    UPDATE inventory SET quantity = quantity - ?, updated_at = ? WHERE id = ?
+    UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?
   `);
 
   const transaction = db.transaction(() => {
@@ -99,31 +100,56 @@ export function createCustomerLedgerEntry(
 }
 
 export function updateCustomerLedgerEntry(
-  id: string, paidAmount: number, description?: string, vehicleNumber?: string
+  id: string, customerId: string, productId: string, transactionDatetime: string,
+  quantity: number, ratePerUnit: number, totalPayment: number,
+  paidAmount: number, description?: string, vehicleNumber?: string
 ) {
   const db = getDatabase();
-  const now = new Date().toISOString();
   const existing = getCustomerLedgerById(id);
   if (!existing) throw new Error('Customer ledger entry not found');
 
-  db.prepare(`
-    UPDATE customer_ledger SET paid_amount = ?, remaining_balance = total_payment - ?,
-      description = ?, vehicle_number = ?, updated_at = ?
-    WHERE id = ? AND deleted_at IS NULL
-  `).run(paidAmount, paidAmount, description ?? null, vehicleNumber ?? null, now, id);
+  const transaction = db.transaction(() => {
+    const now = new Date().toISOString();
+    const remainingBalance = totalPayment - paidAmount;
 
+    updateRow(db, 'customer_ledger', id, {
+      customer_id: customerId,
+      product_id: productId,
+      transaction_datetime: transactionDatetime,
+      quantity,
+      rate_per_unit: ratePerUnit,
+      total_payment: totalPayment,
+      paid_amount: paidAmount,
+      remaining_balance: remainingBalance,
+      description: description ?? null,
+      vehicle_number: vehicleNumber ?? null,
+    });
+
+    const oldQty = existing.quantity;
+    const oldProductId = existing.product_id;
+    const qtyDiff = quantity - oldQty;
+
+    if (oldProductId !== productId) {
+      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(oldQty, now, oldProductId);
+      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(quantity, now, productId);
+    } else if (qtyDiff !== 0) {
+      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(qtyDiff, now, productId);
+    }
+  });
+
+  transaction();
   return getCustomerLedgerById(id);
 }
 
 export function softDeleteCustomerLedgerEntry(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
   const entry = getCustomerLedgerById(id);
   if (!entry) throw new Error('Customer ledger entry not found');
 
   const transaction = db.transaction(() => {
-    db.prepare('UPDATE customer_ledger SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
-    db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE id = ?').run(entry.quantity, entry.product_id);
+    softDeleteRow(db, 'customer_ledger', id);
+    const now = new Date().toISOString();
+    db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(entry.quantity, now, entry.product_id);
   });
 
   transaction();

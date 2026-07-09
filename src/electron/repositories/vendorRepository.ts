@@ -1,4 +1,5 @@
 import { getDatabase } from '../database.js';
+import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 
 export interface VendorRow {
@@ -16,7 +17,6 @@ export interface VendorRow {
 export function getAllVendors(search?: string, page = 1, limit = 20) {
   const db = getDatabase();
   const offset = (page - 1) * limit;
-  const now = new Date().toISOString();
 
   let where = 'WHERE deleted_at IS NULL';
   const params: unknown[] = [];
@@ -50,18 +50,13 @@ export function createVendor(name: string, phone?: string, address?: string, mil
 
 export function updateVendor(id: string, name: string, phone?: string, address?: string, mill_name?: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare(`
-    UPDATE vendors SET name = ?, phone = ?, address = ?, mill_name = ?, updated_at = ?
-    WHERE id = ? AND deleted_at IS NULL
-  `).run(name, phone ?? null, address ?? null, mill_name ?? null, now, id);
+  updateRow(db, 'vendors', id, { name, phone: phone ?? null, address: address ?? null, mill_name: mill_name ?? null });
   return getVendorById(id);
 }
 
 export function softDeleteVendor(id: string) {
   const db = getDatabase();
-  const now = new Date().toISOString();
-  db.prepare('UPDATE vendors SET deleted_at = ?, updated_at = ? WHERE id = ?').run(now, now, id);
+  softDeleteRow(db, 'vendors', id);
 }
 
 export function getVendorOutstanding(id: string) {

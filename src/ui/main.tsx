@@ -5,13 +5,16 @@ import './index.css'
 import App from './App.tsx'
 import { AuthProvider } from './context/AuthContext'
 import { DataProvider } from './context/DataContext'
+import { NotificationProvider } from './context/NotificationContext'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <HashRouter>
       <AuthProvider>
         <DataProvider>
-          <App />
+          <NotificationProvider>
+            <App />
+          </NotificationProvider>
         </DataProvider>
       </AuthProvider>
     </HashRouter>

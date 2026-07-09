@@ -11,6 +11,7 @@ const createWindow = () => {
   win = new BrowserWindow({
     width: 1280,
     height: 800,
+    show: false,
     frame: !app.isPackaged,
     titleBarStyle: app.isPackaged ? 'hidden' : undefined,
     webPreferences: {
@@ -18,6 +19,10 @@ const createWindow = () => {
       contextIsolation: true,
       nodeIntegration: false,
     }
+  })
+
+  win.once('ready-to-show', () => {
+    win?.show()
   })
 
   if (isDev()) {
@@ -43,6 +48,8 @@ ipcMain.on('window:close', () => {
   win?.close()
 })
 
+app.setName('pos')
+app.setPath('userData', 'D:\\pos-data')
 app.whenReady().then(() => {
   initDatabase()
   registerAllIpcHandlers()

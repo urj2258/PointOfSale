@@ -25,7 +25,23 @@ export function isNonNegativeNumber(value: unknown): value is number {
   return typeof value === 'number' && isFinite(value) && value >= 0;
 }
 
-const ALLOWED_EMAIL_DOMAINS = ['gmail.com', 'outlook.com'];
+const ALLOWED_EMAIL_DOMAINS = [
+  'gmail.com',
+  'outlook.com',
+  'hotmail.com',
+  'live.com',
+  'yahoo.com',
+  'protonmail.com',
+  'proton.me',
+  'icloud.com',
+  'mail.com',
+  'aol.com',
+  'yandex.com',
+  'gmx.com',
+  'fastmail.com',
+  'zoho.com',
+  'tutanota.com',
+];
 
 export function isEmail(value: unknown): value is string {
   return typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);

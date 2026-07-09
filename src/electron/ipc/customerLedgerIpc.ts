@@ -29,12 +29,19 @@ export function registerCustomerLedgerIpc() {
     return clRepo.createCustomerLedgerEntry(customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber);
   });
 
-  ipcMain.handle('customer-ledger:update', (_e, id: string, paidAmount: number, description?: string, vehicleNumber?: string) => {
+  ipcMain.handle('customer-ledger:update', (_e, id: string, customerId: string, productId: string, transactionDatetime: string,
+    quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => {
     assertNonEmptyString(id, 'id');
+    assertNonEmptyString(customerId, 'customer_id');
+    assertNonEmptyString(productId, 'product_id');
+    assertValidDateString(transactionDatetime, 'transaction_datetime');
+    assertPositiveNumber(quantity, 'quantity');
+    assertPositiveNumber(ratePerUnit, 'rate_per_unit');
+    assertNonNegativeNumber(totalPayment, 'total_payment');
     assertNonNegativeNumber(paidAmount, 'paid_amount');
     assertOptionalString(description, 'description');
     assertOptionalString(vehicleNumber, 'vehicle_number');
-    return clRepo.updateCustomerLedgerEntry(id, paidAmount, description, vehicleNumber);
+    return clRepo.updateCustomerLedgerEntry(id, customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber);
   });
 
   ipcMain.handle('customer-ledger:delete', (_e, id: string) => {

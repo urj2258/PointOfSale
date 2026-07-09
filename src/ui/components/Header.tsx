@@ -1,22 +1,59 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { SidebarToggle } from './Sidebar'
 import ProfileModal from './ProfileModal'
 import NotificationModal from './NotificationModal'
 import CalendarModal from './CalendarModal'
 import { useAuth } from '../context/AuthContext'
+import { useNotifications } from '../context/NotificationContext'
+import { api } from '../services/api'
 
 interface HeaderProps {
   onMenuToggle: () => void
 }
 
+const TWO_DAYS_MS = 2 * 24 * 60 * 60 * 1000
+
+let inactivityNotified = false
+
 export default function Header({ onMenuToggle }: HeaderProps) {
   const { currentUser } = useAuth()
+  const { addNotification, notifications } = useNotifications()
   const [profileOpen, setProfileOpen] = useState(false)
   const [notifOpen, setNotifOpen] = useState(false)
   const [calendarOpen, setCalendarOpen] = useState(false)
-
   const firstName = currentUser?.full_name?.split(' ')[0] || 'User'
   const initial = currentUser?.full_name?.charAt(0) || 'U'
+
+  const hasUnread = notifications.some(n =>
+    n.type === 'sync_inactivity' || n.type === 'sync_failure' || n.type === 'sync_partial'
+  )
+
+  useEffect(() => {
+    if (!inactivityNotified) {
+      checkSyncInactivity()
+    }
+  }, [])
+
+  const checkSyncInactivity = async () => {
+    try {
+      const lastSyncTime = await api.sync.getLastSyncTime() as string | null
+      if (!lastSyncTime) return
+
+      const elapsed = Date.now() - new Date(lastSyncTime).getTime()
+      if (elapsed >= TWO_DAYS_MS) {
+        inactivityNotified = true
+        const days = Math.floor(elapsed / (24 * 60 * 60 * 1000))
+        addNotification({
+          type: 'sync_inactivity',
+          title: 'Sync overdue',
+          desc: `It's been ${days} days since you last synced. Sync now to keep your data safe!`,
+          color: 'accent-warning',
+        })
+      }
+    } catch (err) {
+      console.error('Failed to check sync inactivity:', err)
+    }
+  }
 
   return (
     <header className="relative z-50 flex items-center justify-between h-16 px-6 bg-white/20 dark:bg-white/[0.04] backdrop-blur-2xl border-b border-white/15 dark:border-white/[0.06]">
@@ -40,7 +77,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" /><path d="M13.73 21a2 2 0 0 1-3.46 0" />
           </svg>
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent-success" />
+          {hasUnread && <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-accent-warning" />}
         </button>
 
         <button onClick={() => setCalendarOpen(true)} className="hidden md:flex p-2 rounded-full text-brand-text-muted hover:text-brand-text-primary hover:bg-white/40 dark:hover:bg-white/[0.08] transition-colors">

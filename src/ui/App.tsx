@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
+import { loadConfig, applyTheme } from './hooks/useTheme'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import Titlebar from './components/Titlebar'
@@ -14,6 +15,8 @@ import VendorLedgerPage from './pages/vendor-ledger/VendorLedgerPage'
 import CustomerLedgerPage from './pages/customer-ledger/CustomerLedgerPage'
 import ExpensesPage from './pages/expenses/ExpensesPage'
 import DayClosingPage from './pages/day-closing/DayClosingPage'
+import InvoicesPage from './pages/invoices/InvoicesPage'
+import VendorInvoicesPage from './pages/vendor-invoices/VendorInvoicesPage'
 import SettingsPage from './pages/settings/SettingsPage'
 
 function Layout() {
@@ -38,6 +41,10 @@ function Layout() {
 }
 
 function App() {
+  useEffect(() => {
+    applyTheme(loadConfig())
+  }, [])
+
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
@@ -50,6 +57,8 @@ function App() {
           <Route path="/vendor-ledger" element={<VendorLedgerPage />} />
           <Route path="/customer-ledger" element={<CustomerLedgerPage />} />
           <Route path="/expenses" element={<ExpensesPage />} />
+          <Route path="/invoices" element={<InvoicesPage />} />
+          <Route path="/vendor-invoices" element={<VendorInvoicesPage />} />
           <Route path="/day-closing" element={<DayClosingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
         </Route>

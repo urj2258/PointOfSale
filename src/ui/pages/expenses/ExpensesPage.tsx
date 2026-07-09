@@ -20,7 +20,7 @@ export default function ExpensesPage() {
   const [filterCategory, setFilterCategory] = useState('')
   const [filterMonth, setFilterMonth] = useState('')
 
-  const [expForm, setExpForm] = useState({ category_id: '', transaction_datetime: '', amount: 0, description: '' })
+  const [expForm, setExpForm] = useState({ category_id: '', transaction_datetime: '', amount: '', description: '' })
   const [catForm, setCatForm] = useState({ name: '' })
   const [error, setError] = useState('')
 
@@ -45,7 +45,7 @@ export default function ExpensesPage() {
   const openCreateExpense = () => {
     const now = new Date().toISOString().slice(0, 16)
     setEditingExpense(null)
-    setExpForm({ category_id: '', transaction_datetime: now, amount: 0, description: '' })
+    setExpForm({ category_id: '', transaction_datetime: now, amount: '', description: '' })
     setError('')
     setExpenseModal(true)
   }
@@ -55,7 +55,7 @@ export default function ExpensesPage() {
     setExpForm({
       category_id: exp.category_id,
       transaction_datetime: exp.transaction_datetime.slice(0, 16),
-      amount: exp.amount,
+      amount: String(exp.amount),
       description: exp.description || '',
     })
     setError('')
@@ -63,14 +63,14 @@ export default function ExpensesPage() {
   }
 
   const handleExpenseSubmit = async () => {
-    if (!expForm.category_id || !expForm.transaction_datetime || expForm.amount <= 0) {
+    if (!expForm.category_id || !expForm.transaction_datetime || Number(expForm.amount) <= 0) {
       setError('Fill all required fields'); return
     }
     setError('')
     if (editingExpense) {
-      await api.expenses.update(editingExpense.id, expForm.category_id, expForm.transaction_datetime, expForm.amount, expForm.description || undefined)
+      await api.expenses.update(editingExpense.id, expForm.category_id, expForm.transaction_datetime, Number(expForm.amount), expForm.description || undefined)
     } else {
-      await api.expenses.create(expForm.category_id, expForm.transaction_datetime, expForm.amount, expForm.description || undefined)
+      await api.expenses.create(expForm.category_id, expForm.transaction_datetime, Number(expForm.amount), expForm.description || undefined)
     }
     setExpenseModal(false)
     loadExpenses()
@@ -152,7 +152,7 @@ export default function ExpensesPage() {
             <div>
               <label className="block text-xs font-medium text-brand-text-muted mb-1">Category</label>
               <select value={filterCategory} onChange={(e) => { setFilterCategory(e.target.value); setPage(1) }}
-                className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
                 <option value="">All Categories</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
@@ -160,7 +160,7 @@ export default function ExpensesPage() {
             <div>
               <label className="block text-xs font-medium text-brand-text-muted mb-1">Month</label>
               <input type="month" value={filterMonth} onChange={(e) => { setFilterMonth(e.target.value); setPage(1) }}
-                className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+                className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
             {(filterCategory || filterMonth) && (
               <button onClick={() => { setFilterCategory(''); setFilterMonth(''); setPage(1) }}
@@ -183,7 +183,7 @@ export default function ExpensesPage() {
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Category *</label>
             <select value={expForm.category_id} onChange={(e) => setExpForm({ ...expForm, category_id: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
               <option value="">Select Category</option>
               {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
@@ -191,17 +191,17 @@ export default function ExpensesPage() {
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Date & Time *</label>
             <input type="datetime-local" value={expForm.transaction_datetime} onChange={(e) => setExpForm({ ...expForm, transaction_datetime: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Amount *</label>
-            <input type="number" value={expForm.amount} onChange={(e) => setExpForm({ ...expForm, amount: Number(e.target.value) })}
-              className="w-full px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+            <input type="number" value={expForm.amount} placeholder="0" onChange={(e) => setExpForm({ ...expForm, amount: e.target.value })} onFocus={(e) => e.target.select()}
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description</label>
             <input type="text" value={expForm.description} onChange={(e) => setExpForm({ ...expForm, description: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setExpenseModal(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
@@ -216,7 +216,7 @@ export default function ExpensesPage() {
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Name *</label>
             <input type="text" value={catForm.name} onChange={(e) => setCatForm({ name: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/40 dark:bg-white/[0.04] text-sm text-brand-text-primary dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setCatModal(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>

@@ -38,6 +38,18 @@
 
   --border-glass-light: rgba(255, 255, 255, 0.6);
   --border-glass-dark: rgba(255, 255, 255, 0.07);
+
+  --gradient-1: rgba(214, 244, 74, 0.35);
+  --gradient-2: rgba(162, 134, 255, 0.3);
+  --gradient-3: rgba(232, 223, 255, 0.45);
+  --gradient-4: rgba(248, 200, 216, 0.3);
+  --gradient-5: rgba(214, 244, 74, 0.15);
+  
+  --gradient-rgb-1: 214, 244, 74;
+  --gradient-rgb-2: 162, 134, 255;
+  --gradient-rgb-3: 232, 223, 255;
+  --gradient-rgb-4: 248, 200, 216;
+  --gradient-rgb-5: 134, 223, 255;
 }
 
 .dark {
@@ -52,6 +64,12 @@
   --shadow-premium-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
   --shadow-premium-md: 0 12px 32px rgba(0, 0, 0, 0.3);
   --shadow-premium-lg: 0 24px 48px rgba(0, 0, 0, 0.4);
+
+  --gradient-1: rgba(214, 244, 74, 0.12);
+  --gradient-2: rgba(162, 134, 255, 0.15);
+  --gradient-3: rgba(43, 31, 89, 0.25);
+  --gradient-4: rgba(248, 200, 216, 0.1);
+  --gradient-5: rgba(214, 244, 74, 0.06);
 }
 
 body {
@@ -71,9 +89,9 @@ body::before {
   position: fixed;
   inset: 0;
   background:
-    radial-gradient(ellipse at 15% 50%, rgba(214, 244, 74, 0.35) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 20%, rgba(162, 134, 255, 0.3) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 80%, rgba(232, 223, 255, 0.45) 0%, transparent 50%);
+    radial-gradient(ellipse at 15% 50%, var(--gradient-1) 0%, transparent 55%),
+    radial-gradient(ellipse at 85% 20%, var(--gradient-2) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 80%, var(--gradient-3) 0%, transparent 50%);
   pointer-events: none;
   z-index: -1;
 }
@@ -85,13 +103,6 @@ body::before {
 .drag-region .no-drag,
 .no-drag {
   -webkit-app-region: no-drag;
-}
-
-.dark body::before {
-  background:
-    radial-gradient(ellipse at 15% 50%, rgba(214, 244, 74, 0.12) 0%, transparent 55%),
-    radial-gradient(ellipse at 85% 20%, rgba(162, 134, 255, 0.15) 0%, transparent 55%),
-    radial-gradient(ellipse at 50% 80%, rgba(43, 31, 89, 0.25) 0%, transparent 50%);
 }
 
 /* Form inputs & select styling override to resolve invalid tailwind surface opacity in dark/light mode */
@@ -107,10 +118,26 @@ input.rounded-input, select.rounded-input {
   border-color: rgba(255, 255, 255, 0.08) !important;
 }
 
-/* Fix option list contrast in dark mode */
-.dark select.rounded-input option {
-  background-color: #1a1d21;
-  color: var(--brand-text-primary);
+/* Fix native select contrast in dark mode */
+.dark select {
+  background-color: rgba(30, 33, 37, 0.95) !important;
+  color: var(--brand-text-primary) !important;
+}
+
+.dark select option {
+  background-color: #1e2125 !important;
+  color: var(--brand-text-primary) !important;
+}
+
+.dark select option:hover,
+.dark select option:checked {
+  background-color: var(--color-primary-400) !important;
+  color: var(--color-primary-900) !important;
+}
+
+.dark select:focus {
+  outline: none !important;
+  border-color: rgba(214, 244, 74, 0.6) !important;
 }
 
 /* Hide scrollbars globally while preserving scroll functionality */

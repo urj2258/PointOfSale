@@ -29,12 +29,19 @@ export function registerVendorLedgerIpc() {
     return vlRepo.createVendorLedgerEntry(vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber);
   });
 
-  ipcMain.handle('vendor-ledger:update', (_e, id: string, paidAmount: number, description?: string, vehicleNumber?: string) => {
+  ipcMain.handle('vendor-ledger:update', (_e, id: string, vendorId: string, productId: string, transactionDatetime: string,
+    quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => {
     assertNonEmptyString(id, 'id');
+    assertNonEmptyString(vendorId, 'vendor_id');
+    assertNonEmptyString(productId, 'product_id');
+    assertValidDateString(transactionDatetime, 'transaction_datetime');
+    assertPositiveNumber(quantity, 'quantity');
+    assertPositiveNumber(ratePerUnit, 'rate_per_unit');
+    assertNonNegativeNumber(totalPayment, 'total_payment');
     assertNonNegativeNumber(paidAmount, 'paid_amount');
     assertOptionalString(description, 'description');
     assertOptionalString(vehicleNumber, 'vehicle_number');
-    return vlRepo.updateVendorLedgerEntry(id, paidAmount, description, vehicleNumber);
+    return vlRepo.updateVendorLedgerEntry(id, vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber);
   });
 
   ipcMain.handle('vendor-ledger:delete', (_e, id: string) => {

@@ -8,6 +8,9 @@ export interface DayClosingRow {
   total_purchases: number
   total_expenses: number
   created_at: string
+  updated_at: string
+  deleted_at: string | null
+  synced: number
 }
 
 export function getDayClosings(page = 1, limit = 20) {
@@ -44,9 +47,9 @@ export function generateDayClosing(businessDate: string) {
 
   const id = crypto.randomUUID();
   db.prepare(`
-    INSERT INTO day_closing_reports (id, business_date, total_sales, total_purchases, total_expenses, created_at)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(id, businessDate, salesRow.total, purchasesRow.total, expensesRow.total, now);
+    INSERT INTO day_closing_reports (id, business_date, total_sales, total_purchases, total_expenses, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, businessDate, salesRow.total, purchasesRow.total, expensesRow.total, now, now);
 
   return getDayClosingByDate(businessDate);
 }

@@ -32,10 +32,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    const user = await api.auth.login(email, password) as User | null
-    if (user) {
-      setCurrentUser(user)
-      return true
+    try {
+      const user = await api.auth.login(email, password) as User | null
+      if (user) {
+        setCurrentUser(user)
+        return true
+      }
+    } catch (err) {
+      console.error('Login failed:', err)
     }
     return false
   }
