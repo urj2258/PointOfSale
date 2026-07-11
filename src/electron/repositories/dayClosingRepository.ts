@@ -26,7 +26,7 @@ export function getDayClosingByDate(date: string) {
   return db.prepare('SELECT * FROM day_closing_reports WHERE business_date = ?').get(date) as DayClosingRow | undefined;
 }
 
-export function generateDayClosing(businessDate: string) {
+export function generateDayClosing(businessDate: string): { report: DayClosingRow; updated: boolean } {
   const db = getDatabase();
   const now = new Date().toISOString();
 
@@ -45,11 +45,20 @@ export function generateDayClosing(businessDate: string) {
     FROM expenses WHERE deleted_at IS NULL AND transaction_datetime LIKE ?
   `).get(`${businessDate}%`) as { total: number };
 
-  const id = crypto.randomUUID();
-  db.prepare(`
-    INSERT INTO day_closing_reports (id, business_date, total_sales, total_purchases, total_expenses, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, businessDate, salesRow.total, purchasesRow.total, expensesRow.total, now, now);
+  const existing = db.prepare('SELECT id FROM day_closing_reports WHERE business_date = ?').get(businessDate) as { id: string } | undefined;
 
-  return getDayClosingByDate(businessDate);
+  if (existing) {
+    db.prepare(`
+      UPDATE day_closing_reports SET total_sales = ?, total_purchases = ?, total_expenses = ?, updated_at = ?, synced = 0
+      WHERE business_date = ?
+    `).run(salesRow.total, purchasesRow.total, expensesRow.total, now, businessDate);
+  } else {
+    const id = crypto.randomUUID();
+    db.prepare(`
+      INSERT INTO day_closing_reports (id, business_date, total_sales, total_purchases, total_expenses, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, businessDate, salesRow.total, purchasesRow.total, expensesRow.total, now, now);
+  }
+
+  return { report: getDayClosingByDate(businessDate)!, updated: !!existing };
 }

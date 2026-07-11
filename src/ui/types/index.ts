@@ -52,6 +52,7 @@ export interface VendorLedgerEntry {
   synced: number
   vendor_name?: string
   product_name?: string
+  vendor_invoice_id?: string | null
 }
 
 export interface CustomerLedgerEntry {
@@ -72,6 +73,7 @@ export interface CustomerLedgerEntry {
   synced: number
   customer_name?: string
   product_name?: string
+  invoice_id?: string | null
 }
 
 export interface ExpenseCategory {

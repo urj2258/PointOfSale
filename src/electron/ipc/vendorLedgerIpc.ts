@@ -49,4 +49,16 @@ export function registerVendorLedgerIpc() {
     vlRepo.softDeleteVendorLedgerEntry(id);
     return { success: true };
   });
+
+  ipcMain.handle('vendor-ledger:pending', (_e, vendorId: string) => {
+    assertNonEmptyString(vendorId, 'vendor_id');
+    return vlRepo.getPendingVendorLedgerEntries(vendorId);
+  });
+
+  ipcMain.handle('vendor-ledger:link-to-invoice', (_e, entryIds: string[], invoiceId: string) => {
+    assertNonEmptyString(invoiceId, 'invoice_id');
+    if (!Array.isArray(entryIds)) throw new Error('entryIds must be an array');
+    vlRepo.linkEntriesToInvoice(entryIds, invoiceId);
+    return { success: true };
+  });
 }

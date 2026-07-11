@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom'
-import { loadConfig, applyTheme } from './hooks/useTheme'
+import { applyTheme } from './hooks/useTheme'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
 import Titlebar from './components/Titlebar'
@@ -42,7 +42,14 @@ function Layout() {
 
 function App() {
   useEffect(() => {
-    applyTheme(loadConfig())
+    const isDark = (() => {
+      try {
+        const raw = localStorage.getItem('dark_mode')
+        if (raw !== null) return JSON.parse(raw)
+      } catch {}
+      return false
+    })()
+    applyTheme(isDark)
   }, [])
 
   return (

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { api } from '../../services/api'
@@ -42,7 +42,7 @@ function buildFailureDesc(results: TableResult[], _direction: string): string {
 
 export default function SettingsPage() {
   const { currentUser, logout } = useAuth()
-  const { config, update, reset, presets } = useTheme()
+  const { isDarkMode, toggle } = useTheme()
   const { addNotification } = useNotifications()
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
@@ -55,6 +55,12 @@ export default function SettingsPage() {
   const [exportMsg, setExportMsg] = useState<string | null>(null)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [expandedFailed, setExpandedFailed] = useState<string | null>(null)
+  const [exportPath, setExportPath] = useState<string | null>(null)
+
+  useEffect(() => {
+    const saved = localStorage.getItem('export_path')
+    if (saved) setExportPath(saved)
+  }, [])
 
   const handleSync = async () => {
     setSyncing(true)
@@ -133,7 +139,7 @@ export default function SettingsPage() {
     setExporting(true)
     setExportMsg(null)
     try {
-      const res = await api.db.export()
+      const res = await api.db.export(exportPath || undefined)
       if (res.success) {
         setExportMsg(`Exported to: ${res.path}`)
       } else {
@@ -143,6 +149,18 @@ export default function SettingsPage() {
       setExportMsg(String(err))
     } finally {
       setExporting(false)
+    }
+  }
+
+  const handleSelectExportPath = async () => {
+    try {
+      const res = await api.db.selectExportPath()
+      if (res.canceled) return
+      setExportPath(res.path)
+      localStorage.setItem('export_path', res.path)
+      setExportMsg(`Export path set to: ${res.path}`)
+    } catch (err) {
+      setExportMsg(String(err))
     }
   }
 
@@ -380,6 +398,22 @@ export default function SettingsPage() {
           </button>
         </div>
 
+        <div className="flex items-center gap-3 pt-1">
+          <span className="text-xs text-brand-text-muted whitespace-nowrap">Export Path:</span>
+          <span className="text-xs text-brand-text-secondary font-mono truncate min-w-0 flex-1">
+            {exportPath || 'Desktop (default)'}
+          </span>
+          <button onClick={handleSelectExportPath}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:text-brand-text-primary hover:bg-white/30 dark:hover:bg-white/[0.08] transition-all shrink-0">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+            Change Directory
+          </button>
+        </div>
+
         {exportMsg && (
           <p className="text-sm text-green-600 bg-green-500/10 rounded-xl px-4 py-3 break-all">
             {exportMsg}
@@ -396,68 +430,11 @@ export default function SettingsPage() {
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Appearance</h2>
 
-        <div>
-          <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-2">Theme Presets</label>
-          <div className="flex flex-wrap gap-2">
-            {presets.map(p => (
-              <button key={p.name} onClick={() => update(p.config)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors ${
-                  config.dark === p.config.dark && config.primary === p.config.primary && config.secondary === p.config.secondary
-                    ? 'bg-brand-primary text-gray-900 border-brand-primary'
-                    : 'bg-white/30 dark:bg-white/[0.06] text-brand-text-muted border-white/30 dark:border-white/[0.1] hover:bg-white/50 dark:hover:bg-white/[0.1]'
-                }`}>
-                {p.name}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Primary Color</label>
-            <div className="flex items-center gap-2">
-              <input type="color" value={config.primary} onChange={(e) => update({ primary: e.target.value })}
-                className="w-10 h-10 rounded-xl border border-gray-200 dark:border-white/[0.1] cursor-pointer bg-transparent" />
-              <span className="text-xs text-brand-text-muted font-mono">{config.primary}</span>
-            </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Secondary Color</label>
-            <div className="flex items-center gap-2">
-              <input type="color" value={config.secondary} onChange={(e) => update({ secondary: e.target.value })}
-                className="w-10 h-10 rounded-xl border border-gray-200 dark:border-white/[0.1] cursor-pointer bg-transparent" />
-              <span className="text-xs text-brand-text-muted font-mono">{config.secondary}</span>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-2">Gradient Colors</label>
-          <p className="text-xs text-brand-text-muted mb-3">Customize the background gradient stops used across the app and login page.</p>
-          <div className="grid grid-cols-5 gap-2 mb-3">
-            {(['gradient1', 'gradient2', 'gradient3', 'gradient4', 'gradient5'] as const).map((key, i) => (
-              <div key={key} className="flex flex-col items-center gap-1">
-                <input type="color" value={config[key]} onChange={(e) => update({ [key]: e.target.value })}
-                  className="w-9 h-9 rounded-lg border border-gray-200 dark:border-white/[0.1] cursor-pointer bg-transparent" />
-                <span className="text-[10px] text-brand-text-muted font-mono">{i + 1}</span>
-              </div>
-            ))}
-          </div>
-          <div className="h-8 rounded-xl overflow-hidden border border-white/20 dark:border-white/[0.08]"
-            style={{ background: `linear-gradient(135deg, ${config.gradient1}, ${config.gradient2}, ${config.gradient3}, ${config.gradient4}, ${config.gradient5})` }} />
-        </div>
-
         <div className="flex items-center justify-between pt-1">
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-brand-text-primary dark:text-white">Dark Mode</span>
-            <button onClick={() => update({ dark: !config.dark })}
-              className={`relative w-11 h-6 rounded-full transition-colors ${config.dark ? 'bg-brand-primary' : 'bg-gray-300 dark:bg-white/[0.15]'}`}>
-              <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${config.dark ? 'translate-x-5' : ''}`} />
-            </button>
-          </div>
-          <button onClick={reset}
-            className="px-3 py-1.5 text-xs rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">
-            Reset Defaults
+          <span className="text-sm text-brand-text-primary dark:text-white">Dark Mode</span>
+          <button onClick={toggle}
+            className={`relative w-11 h-6 rounded-full transition-colors ${isDarkMode ? 'bg-brand-primary' : 'bg-gray-300 dark:bg-white/[0.15]'}`}>
+            <span className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform shadow-sm ${isDarkMode ? 'translate-x-5' : ''}`} />
           </button>
         </div>
       </div>

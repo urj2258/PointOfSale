@@ -4,20 +4,31 @@ import fs from 'fs';
 import { getDbPath, getDatabase, closeDatabase, initDatabase } from '../database.js';
 
 export function registerDbIpc() {
-  ipcMain.handle('db:export', async () => {
+  ipcMain.handle('db:export', async (_e, destDir?: string) => {
     try {
       const srcPath = getDbPath();
       if (!fs.existsSync(srcPath)) return { success: false, error: 'Database file not found' };
 
-      const desktop = app.getPath('desktop');
+      const dir = destDir || app.getPath('desktop');
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const destPath = path.join(desktop, `pos-backup-${timestamp}.db`);
+      const destPath = path.join(dir, `pos-backup-${timestamp}.db`);
 
       fs.copyFileSync(srcPath, destPath);
       return { success: true, path: destPath };
     } catch (err) {
       return { success: false, error: String(err) };
     }
+  });
+
+  ipcMain.handle('db:select-export-path', async () => {
+    const result = await dialog.showOpenDialog({
+      title: 'Select Export Directory',
+      properties: ['openDirectory'],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true };
+    }
+    return { path: result.filePaths[0] };
   });
 
   ipcMain.handle('db:import', async () => {

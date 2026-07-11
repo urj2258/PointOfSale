@@ -4,6 +4,32 @@ import type { Expense, ExpenseCategory, PaginatedResult } from '../../types'
 import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import Modal from '../../components/ui/Modal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
+import DateTimeInput from '../../components/ui/DateTimeInput'
+
+const toISODatetime = (dt: string) => {
+  if (!dt) return ''
+  const [datePart, timePart] = dt.split(' ')
+  const parts = datePart.split('/')
+  if (parts.length !== 3) return dt
+  const [dd, mm, yyyy] = parts.map(p => p.trim())
+  return `${yyyy}-${mm}-${dd}T${timePart || '00:00'}`
+}
+const fmtNowDatetime = () => {
+  const n = new Date()
+  const dd = String(n.getDate()).padStart(2, '0')
+  const mm = String(n.getMonth() + 1).padStart(2, '0')
+  const yyyy = n.getFullYear()
+  const hh = String(n.getHours()).padStart(2, '0')
+  const mi = String(n.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`
+}
+const fmtIsoDatetime = (dt: string) => {
+  if (!dt) return ''
+  const [datePart, timePart] = dt.split('T')
+  const [y, m, d] = datePart.split('-')
+  return `${d}/${m}/${y} ${timePart || '00:00'}`
+}
 
 export default function ExpensesPage() {
   const [data, setData] = useState<PaginatedResult<Expense> | null>(null)
@@ -23,6 +49,8 @@ export default function ExpensesPage() {
   const [expForm, setExpForm] = useState({ category_id: '', transaction_datetime: '', amount: '', description: '' })
   const [catForm, setCatForm] = useState({ name: '' })
   const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deletingType, setDeletingType] = useState<'expense' | 'category'>('expense')
 
   const loadExpenses = useCallback(async () => {
     setLoading(true)
@@ -43,9 +71,8 @@ export default function ExpensesPage() {
   }, [tab, loadExpenses])
 
   const openCreateExpense = () => {
-    const now = new Date().toISOString().slice(0, 16)
     setEditingExpense(null)
-    setExpForm({ category_id: '', transaction_datetime: now, amount: '', description: '' })
+    setExpForm({ category_id: '', transaction_datetime: fmtNowDatetime(), amount: '', description: '' })
     setError('')
     setExpenseModal(true)
   }
@@ -54,7 +81,7 @@ export default function ExpensesPage() {
     setEditingExpense(exp)
     setExpForm({
       category_id: exp.category_id,
-      transaction_datetime: exp.transaction_datetime.slice(0, 16),
+      transaction_datetime: fmtIsoDatetime(exp.transaction_datetime),
       amount: String(exp.amount),
       description: exp.description || '',
     })
@@ -67,17 +94,19 @@ export default function ExpensesPage() {
       setError('Fill all required fields'); return
     }
     setError('')
+    const isoDt = toISODatetime(expForm.transaction_datetime)
     if (editingExpense) {
-      await api.expenses.update(editingExpense.id, expForm.category_id, expForm.transaction_datetime, Number(expForm.amount), expForm.description || undefined)
+      await api.expenses.update(editingExpense.id, expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
     } else {
-      await api.expenses.create(expForm.category_id, expForm.transaction_datetime, Number(expForm.amount), expForm.description || undefined)
+      await api.expenses.create(expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
     }
     setExpenseModal(false)
     loadExpenses()
   }
 
-  const handleDeleteExpense = async (exp: Expense) => {
-    if (confirm('Delete this expense?')) { await api.expenses.delete(exp.id); loadExpenses() }
+  const handleDeleteExpense = (exp: Expense) => {
+    setDeletingId(exp.id)
+    setDeletingType('expense')
   }
 
   const openCreateCat = () => {
@@ -106,8 +135,9 @@ export default function ExpensesPage() {
     loadCategories()
   }
 
-  const handleDeleteCat = async (cat: ExpenseCategory) => {
-    if (confirm(`Delete category "${cat.name}"?`)) { await api.expenseCategories.delete(cat.id); loadCategories() }
+  const handleDeleteCat = (cat: ExpenseCategory) => {
+    setDeletingId(cat.id)
+    setDeletingType('category')
   }
 
   const expenseColumns = [
@@ -190,7 +220,7 @@ export default function ExpensesPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Date & Time *</label>
-            <input type="datetime-local" value={expForm.transaction_datetime} onChange={(e) => setExpForm({ ...expForm, transaction_datetime: e.target.value })}
+            <DateTimeInput value={expForm.transaction_datetime} onChange={(v) => setExpForm({ ...expForm, transaction_datetime: v })}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div>
@@ -224,6 +254,19 @@ export default function ExpensesPage() {
           </div>
         </div>
       </Modal>
+      <ConfirmModal open={deletingId !== null}
+        onClose={() => { setDeletingId(null) }}
+        onConfirm={async () => {
+          if (!deletingId) return
+          if (deletingType === 'expense') { await api.expenses.delete(deletingId) } else { await api.expenseCategories.delete(deletingId) }
+          setDeletingId(null)
+          deletingType === 'expense' ? loadExpenses() : loadCategories()
+        }}
+        title={deletingType === 'expense' ? 'Delete Expense' : 'Delete Category'}
+        message={deletingType === 'expense'
+          ? 'Are you sure you want to delete this expense? This action cannot be undone.'
+          : `Are you sure you want to delete category "${categories.find(c => c.id === deletingId)?.name}"? This action cannot be undone.`}
+        confirmLabel="Delete" danger />
     </div>
   )
 }

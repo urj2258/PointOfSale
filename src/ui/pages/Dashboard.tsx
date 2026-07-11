@@ -18,7 +18,8 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.dashboard.stats().then((data: DashboardStats) => {
+    const threshold = Number(localStorage.getItem('low_stock_threshold')) || 10
+    api.dashboard.stats(threshold).then((data: DashboardStats) => {
       setStats(data)
       setLoading(false)
     })

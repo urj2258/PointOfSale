@@ -5,6 +5,14 @@ export class ValidationError extends Error {
   }
 }
 
+export function handleIpcError(err: unknown): { error: string } {
+  if (err instanceof ValidationError) {
+    return { error: err.message };
+  }
+  const msg = err instanceof Error ? err.message : String(err);
+  return { error: msg };
+}
+
 export function isString(value: unknown): value is string {
   return typeof value === 'string';
 }
@@ -54,7 +62,97 @@ export function isAllowedEmailDomain(value: unknown): value is string {
 }
 
 export function isPhone(value: unknown): value is string {
-  return typeof value === 'string' && /^[\d\s\-+()]{7,20}$/.test(value);
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (/[^0-9+\-\s()]/.test(v)) return false;
+  const digits = v.replace(/[^0-9]/g, '');
+  if (/^03\d{9}$/.test(digits)) return true;
+  if (/^923\d{9}$/.test(digits)) return true;
+  if (/^3\d{9}$/.test(digits)) return true;
+  if (/^0[24-9]\d{8,9}$/.test(digits)) return true;
+  if (/^92[24-9]\d{8,9}$/.test(digits)) return true;
+  return false;
+}
+
+export function isName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (v.length < 3 || v.length > 100) return false;
+  if (/^\d+$/.test(v)) return false;
+  if (/^[^a-zA-Z0-9]+$/.test(v)) return false;
+  return true;
+}
+
+export function isAddress(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (v.length < 5 || v.length > 250) return false;
+  if (/^\d+$/.test(v)) return false;
+  if (/^[^a-zA-Z0-9]+$/.test(v)) return false;
+  return true;
+}
+
+export const ALLOWED_UNITS = [
+  'bag', 'bags',
+  'ton', 'tons',
+  'kg', 'kgs',
+  'gram', 'grams',
+  'liter', 'liters',
+  'ml',
+  'meter', 'meters',
+  'cm', 'mm',
+  'feet', 'foot',
+  'inch', 'inches',
+  'yard', 'yards',
+  'pieces', 'piece', 'pcs',
+  'box', 'boxes',
+  'carton', 'cartons',
+  'roll', 'rolls',
+  'drum', 'drums',
+  'can', 'cans',
+  'bottle', 'bottles',
+  'sack', 'sacks',
+  'bundle', 'bundles',
+  'sheet', 'sheets',
+  'coil', 'coils',
+  'tank', 'tanks',
+  'set', 'sets',
+  'pair', 'pairs',
+  'unit', 'units',
+  'dozen', 'dozens',
+  'quintal', 'quintals',
+] as const;
+
+export type AllowedUnit = (typeof ALLOWED_UNITS)[number];
+
+export function isAllowedUnit(value: unknown): value is AllowedUnit {
+  if (typeof value !== 'string') return false;
+  return ALLOWED_UNITS.includes(value.trim().toLowerCase() as AllowedUnit);
+}
+
+export function isProductName(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (v.length < 3 || v.length > 100) return false;
+  if (/^\d+$/.test(v)) return false;
+  if (/^[^a-zA-Z0-9]+$/.test(v)) return false;
+  return true;
+}
+
+export function isNonNegativeInteger(value: unknown): value is number {
+  if (typeof value !== 'number') return false;
+  if (!Number.isFinite(value)) return false;
+  if (!Number.isInteger(value)) return false;
+  return value >= 0;
+}
+
+export function isDescription(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
+  const v = value.trim();
+  if (v.length < 5 || v.length > 500) return false;
+  if (/^\d+$/.test(v)) return false;
+  if (/^[^a-zA-Z0-9]+$/.test(v)) return false;
+  return true;
 }
 
 export function isValidDateString(value: unknown): value is string {
@@ -101,7 +199,36 @@ export function assertEmail(value: unknown, field: string): asserts value is str
 }
 
 export function assertPhone(value: unknown, field: string): asserts value is string {
-  assert(isPhone(value), `${formatField(field)} must be a valid phone number`);
+  assert(isNonEmptyString(value), `${formatField(field)} is required`);
+  assert(isPhone(value), `${formatField(field)} must be a valid Pakistani phone number (e.g. 03xxxxxxxxx or +923xxxxxxxxx)`);
+}
+
+export function assertName(value: unknown, field: string): asserts value is string {
+  assert(isName(value), `${formatField(field)} is required, must be 3-100 characters, and cannot be purely numbers or special characters`);
+}
+
+export function assertAddress(value: unknown, field: string): asserts value is string {
+  assert(isAddress(value), `${formatField(field)} is required, must be 5-250 characters with a meaningful street/area name`);
+}
+
+export function assertProductName(value: unknown, field: string): asserts value is string {
+  assert(isProductName(value), `${formatField(field)} is required, must be 3-100 characters, and cannot be purely numbers or special characters`);
+}
+
+export function assertAllowedUnit(value: unknown, field: string): asserts value is AllowedUnit {
+  assert(isAllowedUnit(value), `${formatField(field)} must be one of: ${ALLOWED_UNITS.join(', ')}`);
+}
+
+export function assertNonNegativeInteger(value: unknown, field: string): asserts value is number {
+  assert(isNonNegativeInteger(value), `${formatField(field)} must be a valid whole number (0 or greater)`);
+}
+
+export function assertDescription(value: unknown, field: string): asserts value is string {
+  assert(isDescription(value), `${formatField(field)} must be 5-500 characters and cannot be purely numbers or special characters`);
+}
+
+export function assertOptionalString(value: unknown, field: string): asserts value is string | undefined {
+  assert(isUndefinedOrString(value), `${formatField(field)} must be a string if provided`);
 }
 
 export function assertValidDateString(value: unknown, field: string): asserts value is string {
@@ -110,8 +237,4 @@ export function assertValidDateString(value: unknown, field: string): asserts va
 
 export function assertUUID(value: unknown, field: string): asserts value is string {
   assert(isUUID(value), `${formatField(field)} must be a valid UUID`);
-}
-
-export function assertOptionalString(value: unknown, field: string): asserts value is string | undefined {
-  assert(isUndefinedOrString(value), `${formatField(field)} must be a string if provided`);
 }

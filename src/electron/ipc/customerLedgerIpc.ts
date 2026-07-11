@@ -49,4 +49,15 @@ export function registerCustomerLedgerIpc() {
     clRepo.softDeleteCustomerLedgerEntry(id);
     return { success: true };
   });
+
+  ipcMain.handle('customer-ledger:pending', (_e, customerId: string) => {
+    assertNonEmptyString(customerId, 'customerId');
+    return clRepo.getPendingCustomerLedgerEntries(customerId);
+  });
+
+  ipcMain.handle('customer-ledger:link-to-invoice', (_e, entryIds: string[], invoiceId: string) => {
+    assertNonEmptyString(invoiceId, 'invoiceId');
+    clRepo.linkEntriesToInvoice(entryIds, invoiceId);
+    return { success: true };
+  });
 }

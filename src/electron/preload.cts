@@ -35,14 +35,18 @@ contextBridge.exposeInMainWorld('electron', {
     create: (vendorId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('vendor-ledger:create', vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
     update: (id: string, vendorId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('vendor-ledger:update', id, vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
     delete: (id: string) => ipcRenderer.invoke('vendor-ledger:delete', id),
+    pending: (vendorId: string) => ipcRenderer.invoke('vendor-ledger:pending', vendorId),
+    linkToInvoice: (entryIds: string[], invoiceId: string) => ipcRenderer.invoke('vendor-ledger:link-to-invoice', entryIds, invoiceId),
   },
-  customerLedger: {
-    list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => ipcRenderer.invoke('customer-ledger:list', customerId, dateFrom, dateTo, page, limit),
-    get: (id: string) => ipcRenderer.invoke('customer-ledger:get', id),
-    create: (customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('customer-ledger:create', customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
-    update: (id: string, customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('customer-ledger:update', id, customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
-    delete: (id: string) => ipcRenderer.invoke('customer-ledger:delete', id),
-  },
+    customerLedger: {
+      list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => ipcRenderer.invoke('customer-ledger:list', customerId, dateFrom, dateTo, page, limit),
+      get: (id: string) => ipcRenderer.invoke('customer-ledger:get', id),
+      create: (customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('customer-ledger:create', customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+      update: (id: string, customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => ipcRenderer.invoke('customer-ledger:update', id, customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+      delete: (id: string) => ipcRenderer.invoke('customer-ledger:delete', id),
+      pending: (customerId: string) => ipcRenderer.invoke('customer-ledger:pending', customerId),
+      linkToInvoice: (entryIds: string[], invoiceId: string) => ipcRenderer.invoke('customer-ledger:link-to-invoice', entryIds, invoiceId),
+    },
   vendorInvoices: {
     list: (status?: string, vendorId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => ipcRenderer.invoke('vendor-invoices:list', status, vendorId, dateFrom, dateTo, page, limit),
     get: (id: string) => ipcRenderer.invoke('vendor-invoices:get', id),
@@ -84,7 +88,7 @@ contextBridge.exposeInMainWorld('electron', {
     generate: (businessDate: string) => ipcRenderer.invoke('day-closing:generate', businessDate),
   },
   dashboard: {
-    stats: () => ipcRenderer.invoke('dashboard:stats'),
+    stats: (threshold?: number) => ipcRenderer.invoke('dashboard:stats', threshold),
   },
   auth: {
     login: (email: string, password: string) => ipcRenderer.invoke('auth:login', email, password),
@@ -96,7 +100,8 @@ contextBridge.exposeInMainWorld('electron', {
     getLastSyncTime: () => ipcRenderer.invoke('sync:last-time'),
   },
   db: {
-    export: () => ipcRenderer.invoke('db:export'),
+    export: (destDir?: string) => ipcRenderer.invoke('db:export', destDir),
     import: () => ipcRenderer.invoke('db:import'),
+    selectExportPath: () => ipcRenderer.invoke('db:select-export-path'),
   },
 })

@@ -126,7 +126,7 @@ export function createVendorInvoice(
   const db = getDatabase();
   const now = nowISO();
   const id = crypto.randomUUID();
-  const remainingBalance = total - paidAmount;
+  const remainingBalance = Math.max(0, total - paidAmount);
   const status = remainingBalance <= 0 ? 'Paid' : 'Pending';
 
   const insertInvoice = db.prepare(`
@@ -163,7 +163,7 @@ export function updateVendorInvoice(
   paidAmount: number, status: string, notes?: string
 ) {
   const db = getDatabase();
-  const remainingBalance = total - paidAmount;
+  const remainingBalance = Math.max(0, total - paidAmount);
 
   updateRow(db, 'vendor_invoices', id, {
     vendor_id: vendorId,
@@ -210,18 +210,6 @@ export function replaceVendorInvoiceItems(invoiceId: string, items: VendorInvoic
   return getVendorInvoiceWithItems(invoiceId);
 }
 
-export function softDeleteVendorInvoice(id: string) {
-  const db = getDatabase();
-  const now = nowISO();
-
-  const transaction = db.transaction(() => {
-    softDeleteRow(db, 'vendor_invoices', id);
-    db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL').run(now, now, id);
-  });
-
-  transaction();
-}
-
 export function markVendorInvoiceAsPaid(id: string) {
   const db = getDatabase();
   const existing = getVendorInvoiceById(id);
@@ -234,6 +222,18 @@ export function markVendorInvoiceAsPaid(id: string) {
   });
 
   return getVendorInvoiceById(id);
+}
+
+export function softDeleteVendorInvoice(id: string) {
+  const db = getDatabase();
+  const now = nowISO();
+
+  const transaction = db.transaction(() => {
+    softDeleteRow(db, 'vendor_invoices', id);
+    db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL').run(now, now, id);
+  });
+
+  transaction();
 }
 
 export function getVendorInvoicesSummary() {

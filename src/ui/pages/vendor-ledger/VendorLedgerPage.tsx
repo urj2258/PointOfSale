@@ -4,6 +4,38 @@ import type { VendorLedgerEntry, PaginatedResult, Vendor, InventoryItem } from '
 import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import Modal from '../../components/ui/Modal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
+import DateInput from '../../components/ui/DateInput'
+import DateTimeInput from '../../components/ui/DateTimeInput'
+
+const fmtDate = (d: string) => {
+  if (!d) return ''
+  const parts = d.split('T')[0].split('-')
+  if (parts.length !== 3) return d
+  return `${parts[2]}/${parts[1]}/${parts[0]}`
+}
+const toISO = (d: string) => {
+  if (!d) return ''
+  const parts = d.split('/')
+  if (parts.length !== 3) return d
+  const [dd, mm, yyyy] = parts.map(p => p.trim())
+  if (dd.length !== 2 || mm.length !== 2 || yyyy.length !== 4) return d
+  return `${yyyy}-${mm}-${dd}`
+}
+const fmtDatetime = (dt: string) => {
+  if (!dt) return ''
+  const [datePart, timePart] = dt.split('T')
+  const [y, m, d] = datePart.split('-')
+  return `${d}/${m}/${y} ${timePart || ''}`
+}
+const toISODatetime = (dt: string) => {
+  if (!dt) return ''
+  const [datePart, timePart] = dt.split(' ')
+  const parts = datePart.split('/')
+  if (parts.length !== 3) return dt
+  const [dd, mm, yyyy] = parts.map(p => p.trim())
+  return `${yyyy}-${mm}-${dd}T${timePart || '00:00'}`
+}
 
 export default function VendorLedgerPage() {
   const [data, setData] = useState<PaginatedResult<VendorLedgerEntry> | null>(null)
@@ -24,11 +56,12 @@ export default function VendorLedgerPage() {
     paid_amount: '', description: '', vehicle_number: '',
   })
   const [error, setError] = useState('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
     const result = await api.vendorLedger.list(
-      filterVendor || undefined, filterDateFrom || undefined, filterDateTo || undefined, page, 20
+      filterVendor || undefined, toISO(filterDateFrom) || undefined, toISO(filterDateTo) || undefined, page, 20
     )
     setData(result)
     setLoading(false)
@@ -44,7 +77,7 @@ export default function VendorLedgerPage() {
   const openCreate = () => {
     const now = new Date().toISOString().slice(0, 16)
     setEditing(null)
-    setForm({ vendor_id: '', product_id: '', transaction_datetime: now, quantity: '', rate_per_unit: '', total_payment: '', paid_amount: '', description: '', vehicle_number: '' })
+    setForm({ vendor_id: '', product_id: '', transaction_datetime: fmtDatetime(now), quantity: '', rate_per_unit: '', total_payment: '', paid_amount: '', description: '', vehicle_number: '' })
     setError('')
     setModalOpen(true)
   }
@@ -53,7 +86,7 @@ export default function VendorLedgerPage() {
     setEditing(entry)
     setForm({
       vendor_id: entry.vendor_id, product_id: entry.product_id,
-      transaction_datetime: entry.transaction_datetime.slice(0, 16),
+      transaction_datetime: fmtDatetime(entry.transaction_datetime.slice(0, 16)),
       quantity: String(entry.quantity), rate_per_unit: String(entry.rate_per_unit),
       total_payment: String(entry.total_payment), paid_amount: String(entry.paid_amount),
       description: entry.description || '', vehicle_number: entry.vehicle_number || '',
@@ -67,13 +100,14 @@ export default function VendorLedgerPage() {
     if (Number(form.quantity) <= 0 || Number(form.rate_per_unit) <= 0) { setError('Quantity and rate must be positive'); return }
     if (Number(form.paid_amount) > Number(form.total_payment)) { setError('Paid amount cannot exceed total payment'); return }
     setError('')
+    const isoDt = toISODatetime(form.transaction_datetime)
     if (editing) {
       await api.vendorLedger.update(editing.id,
-        form.vendor_id, form.product_id, form.transaction_datetime,
+        form.vendor_id, form.product_id, isoDt,
         Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
         form.description || undefined, form.vehicle_number || undefined)
     } else {
-      await api.vendorLedger.create(form.vendor_id, form.product_id, form.transaction_datetime,
+      await api.vendorLedger.create(form.vendor_id, form.product_id, isoDt,
         Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
         form.description || undefined, form.vehicle_number || undefined)
     }
@@ -81,11 +115,8 @@ export default function VendorLedgerPage() {
     load()
   }
 
-  const handleDelete = async (entry: VendorLedgerEntry) => {
-    if (confirm('Delete this purchase entry?')) {
-      await api.vendorLedger.delete(entry.id)
-      load()
-    }
+  const handleDelete = (entry: VendorLedgerEntry) => {
+    setDeletingId(entry.id)
   }
 
   const remainingBalance = Number(form.total_payment) - Number(form.paid_amount)
@@ -130,12 +161,12 @@ export default function VendorLedgerPage() {
         </div>
         <div>
           <label className="block text-xs font-medium text-brand-text-muted mb-1">From</label>
-          <input type="date" value={filterDateFrom} onChange={(e) => { setFilterDateFrom(e.target.value); setPage(1) }}
+          <DateInput value={filterDateFrom} onChange={(v) => { setFilterDateFrom(v); setPage(1) }}
             className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
         </div>
         <div>
           <label className="block text-xs font-medium text-brand-text-muted mb-1">To</label>
-          <input type="date" value={filterDateTo} onChange={(e) => { setFilterDateTo(e.target.value); setPage(1) }}
+          <DateInput value={filterDateTo} onChange={(v) => { setFilterDateTo(v); setPage(1) }}
             className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
         </div>
         {(filterVendor || filterDateFrom || filterDateTo) && (
@@ -172,7 +203,7 @@ export default function VendorLedgerPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Date & Time *</label>
-            <input type="datetime-local" value={form.transaction_datetime} onChange={(e) => setForm({ ...form, transaction_datetime: e.target.value })}
+            <DateTimeInput value={form.transaction_datetime} onChange={(v) => setForm({ ...form, transaction_datetime: v })}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div className="grid grid-cols-2 gap-4">
@@ -219,6 +250,11 @@ export default function VendorLedgerPage() {
           </div>
         </div>
       </Modal>
+      <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
+        onConfirm={async () => { if (deletingId) { await api.vendorLedger.delete(deletingId); setDeletingId(null); load() } }}
+        title="Delete Purchase Entry"
+        message="Are you sure you want to delete this purchase entry? This action cannot be undone."
+        confirmLabel="Delete" danger />
     </div>
   )
 }

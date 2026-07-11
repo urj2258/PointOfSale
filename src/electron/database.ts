@@ -32,7 +32,6 @@ export function initDatabase(): Database.Database {
   createTables(db);
   migrateSchema(db);
   createIndexes(db);
-  seedExpenseCategories(db);
   seedOwner(db);
 
   return db;
@@ -61,15 +60,15 @@ export const SYNC_TABLE_ORDER: string[] = [
   'customers',
   'inventory',
   'expense_categories',
-  'vendor_ledger',
-  'vendor_invoices',
-  'vendor_invoice_items',
-  'customer_ledger',
-  'invoices',
-  'invoice_items',
-  'expenses',
   'day_closing_reports',
   'users',
+  'vendor_invoices',
+  'invoices',
+  'expenses',
+  'vendor_ledger',
+  'vendor_invoice_items',
+  'customer_ledger',
+  'invoice_items',
 ];
 
 function createTables(db: Database.Database): void {
@@ -126,8 +125,10 @@ function createTables(db: Database.Database): void {
       updated_at TEXT NOT NULL,
       deleted_at TEXT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
+      vendor_invoice_id TEXT DEFAULT NULL,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
-      FOREIGN KEY (product_id) REFERENCES inventory(id)
+      FOREIGN KEY (product_id) REFERENCES inventory(id),
+      FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
     );
 
     CREATE TABLE IF NOT EXISTS vendor_invoices (
@@ -182,8 +183,10 @@ function createTables(db: Database.Database): void {
       updated_at TEXT NOT NULL,
       deleted_at TEXT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
+      invoice_id TEXT DEFAULT NULL,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
-      FOREIGN KEY (product_id) REFERENCES inventory(id)
+      FOREIGN KEY (product_id) REFERENCES inventory(id),
+      FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
 
     CREATE TABLE IF NOT EXISTS expense_categories (
@@ -307,6 +310,16 @@ function migrateSchema(db: Database.Database): void {
   if (expenseCols.includes('sycned') && !expenseCols.includes('synced')) {
     db.exec('ALTER TABLE expenses RENAME COLUMN sycned TO synced');
   }
+
+  const vlCols = tableCols('vendor_ledger');
+  if (!vlCols.includes('vendor_invoice_id')) {
+    addColumn('vendor_ledger', 'vendor_invoice_id TEXT DEFAULT NULL');
+  }
+
+  const clCols = tableCols('customer_ledger');
+  if (!clCols.includes('invoice_id')) {
+    addColumn('customer_ledger', 'invoice_id TEXT DEFAULT NULL');
+  }
 }
 
 function createIndexes(db: Database.Database): void {
@@ -363,35 +376,6 @@ function createIndexes(db: Database.Database): void {
 
     CREATE INDEX IF NOT EXISTS idx_day_closing_reports_business_date ON day_closing_reports(business_date);
   `);
-}
-
-function seedExpenseCategories(db: Database.Database): void {
-  const count = db.prepare('SELECT COUNT(*) as count FROM expense_categories').get() as { count: number };
-  if (count.count > 0) return;
-
-  const categories = [
-    'Electricity Bill',
-    'Travelling Expense',
-    'Employee Salary',
-    'Daily Wages',
-    'Vehicle Expenses',
-    'Office Rent',
-    'Miscellaneous Expenses',
-  ];
-
-  const now = new Date().toISOString();
-  const insert = db.prepare(`
-    INSERT INTO expense_categories (id, name, created_at, updated_at)
-    VALUES (?, ?, ?, ?)
-  `);
-
-  const insertMany = db.transaction((cats: string[]) => {
-    for (const name of cats) {
-      insert.run(crypto.randomUUID(), name, now, now);
-    }
-  });
-
-  insertMany(categories);
 }
 
 function seedOwner(db: Database.Database): void {

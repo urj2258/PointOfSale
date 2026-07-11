@@ -1,19 +1,19 @@
-const e = window.electron as any
+const e = (window as any).electron
 
 export const api = {
   vendors: {
     list: (search?: string, page?: number, limit?: number) => e.vendors.list(search, page, limit),
     get: (id: string) => e.vendors.get(id),
-    create: (name: string, phone?: string, address?: string, mill_name?: string) => e.vendors.create(name, phone, address, mill_name),
-    update: (id: string, name: string, phone?: string, address?: string, mill_name?: string) => e.vendors.update(id, name, phone, address, mill_name),
+    create: (name: string, phone?: string, address?: string, millName?: string) => e.vendors.create(name, phone, address, millName),
+    update: (id: string, name: string, phone?: string, address?: string, millName?: string) => e.vendors.update(id, name, phone, address, millName),
     delete: (id: string) => e.vendors.delete(id),
     outstanding: (id: string) => e.vendors.outstanding(id),
   },
   customers: {
     list: (search?: string, page?: number, limit?: number) => e.customers.list(search, page, limit),
     get: (id: string) => e.customers.get(id),
-    create: (name: string, phone?: string, address?: string, shop_name?: string) => e.customers.create(name, phone, address, shop_name),
-    update: (id: string, name: string, phone?: string, address?: string, shop_name?: string) => e.customers.update(id, name, phone, address, shop_name),
+    create: (name: string, phone?: string, address?: string, shopName?: string) => e.customers.create(name, phone, address, shopName),
+    update: (id: string, name: string, phone?: string, address?: string, shopName?: string) => e.customers.update(id, name, phone, address, shopName),
     delete: (id: string) => e.customers.delete(id),
     outstanding: (id: string) => e.customers.outstanding(id),
   },
@@ -32,14 +32,18 @@ export const api = {
     create: (vendorId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.vendorLedger.create(vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
     update: (id: string, vendorId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.vendorLedger.update(id, vendorId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
     delete: (id: string) => e.vendorLedger.delete(id),
+    pending: (vendorId: string) => e.vendorLedger.pending(vendorId),
+    linkToInvoice: (entryIds: string[], invoiceId: string) => e.vendorLedger.linkToInvoice(entryIds, invoiceId),
   },
-  customerLedger: {
-    list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.customerLedger.list(customerId, dateFrom, dateTo, page, limit),
-    get: (id: string) => e.customerLedger.get(id),
-    create: (customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.create(customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
-    update: (id: string, customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.update(id, customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
-    delete: (id: string) => e.customerLedger.delete(id),
-  },
+    customerLedger: {
+      list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.customerLedger.list(customerId, dateFrom, dateTo, page, limit),
+      get: (id: string) => e.customerLedger.get(id),
+      create: (customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.create(customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+      update: (id: string, customerId: string, productId: string, transactionDatetime: string, quantity: number, ratePerUnit: number, totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string) => e.customerLedger.update(id, customerId, productId, transactionDatetime, quantity, ratePerUnit, totalPayment, paidAmount, description, vehicleNumber),
+      delete: (id: string) => e.customerLedger.delete(id),
+      pending: (customerId: string) => e.customerLedger.pending(customerId),
+      linkToInvoice: (entryIds: string[], invoiceId: string) => e.customerLedger.linkToInvoice(entryIds, invoiceId),
+    },
   vendorInvoices: {
     list: (status?: string, vendorId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.vendorInvoices.list(status, vendorId, dateFrom, dateTo, page, limit),
     get: (id: string) => e.vendorInvoices.get(id),
@@ -81,7 +85,7 @@ export const api = {
     generate: (businessDate: string) => e.dayClosing.generate(businessDate),
   },
   dashboard: {
-    stats: () => e.dashboard.stats(),
+    stats: (threshold?: number) => e.dashboard.stats(threshold),
   },
   auth: {
     login: (email: string, password: string) => e.auth.login(email, password),
@@ -93,7 +97,8 @@ export const api = {
     getLastSyncTime: () => e.sync.getLastSyncTime(),
   },
   db: {
-    export: () => e.db.export(),
+    export: (destDir?: string) => e.db.export(destDir),
     import: () => e.db.import(),
+    selectExportPath: () => e.db.selectExportPath(),
   },
 }

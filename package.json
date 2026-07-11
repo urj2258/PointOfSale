@@ -1,7 +1,7 @@
 {
   "name": "pos",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Point of Sale Desktop Application",
   "author": "Shahzeb",
   "type": "module",
@@ -11,6 +11,7 @@
     "dev:react": "vite",
     "dev:electron": "wait-on http://localhost:5132 && npm run transpile:electron && cross-env NODE_ENV=development electron .",
     "build": "cross-env TEMP=D:\\npm-temp TMP=D:\\npm-temp tsc -b && vite build",
+    "test": "vitest run",
     "lint": "eslint .",
     "preview": "vite preview",
     "seed:owner": "cross-env TEMP=D:\\npm-temp TMP=D:\\npm-temp node scripts/seed-owner.js",
@@ -27,6 +28,7 @@
     "better-sqlite3": "^12.11.1",
     "dotenv": "^17.4.2",
     "react": "^19.2.7",
+    "react-datepicker": "^9.1.0",
     "react-dom": "^19.2.7",
     "react-router-dom": "^7.18.0"
   },
@@ -38,6 +40,7 @@
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
+    "@types/react-datepicker": "^6.2.0",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "autoprefixer": "^10.5.2",
@@ -54,6 +57,7 @@
     "typescript": "~6.0.2",
     "typescript-eslint": "^8.61.0",
     "vite": "^8.1.0",
+    "vitest": "^4.1.10",
     "wait-on": "^9.0.10"
   }
 }

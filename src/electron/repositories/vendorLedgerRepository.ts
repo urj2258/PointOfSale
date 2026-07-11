@@ -1,6 +1,27 @@
+import Database from 'better-sqlite3';
 import { getDatabase } from '../database.js';
 import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
+
+function syncVendorInvoiceFromLedger(db: Database.Database, invoiceId: string, now: string) {
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(paid_amount), 0) as totalPaid
+    FROM vendor_ledger
+    WHERE vendor_invoice_id = ? AND deleted_at IS NULL
+  `).get(invoiceId) as { totalPaid: number };
+
+  const invoice = db.prepare('SELECT total FROM vendor_invoices WHERE id = ? AND deleted_at IS NULL').get(invoiceId) as { total: number } | undefined;
+  if (!invoice) return;
+
+  const remainingBalance = Math.max(0, invoice.total - row.totalPaid);
+  const status = remainingBalance <= 0 ? 'Paid' : 'Pending';
+
+  updateRow(db, 'vendor_invoices', invoiceId, {
+    paid_amount: row.totalPaid,
+    remaining_balance: remainingBalance,
+    status,
+  });
+}
 
 export interface VendorLedgerRow {
   id: string
@@ -18,6 +39,7 @@ export interface VendorLedgerRow {
   updated_at: string
   deleted_at: string | null
   synced: number
+  vendor_invoice_id: string | null
 }
 
 export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dateTo?: string, page = 1, limit = 20) {
@@ -134,6 +156,10 @@ export function updateVendorLedgerEntry(
     } else if (qtyDiff !== 0) {
       db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(qtyDiff, now, productId);
     }
+
+    if (existing.vendor_invoice_id) {
+      syncVendorInvoiceFromLedger(db, existing.vendor_invoice_id, now);
+    }
   });
 
   transaction();
@@ -149,6 +175,10 @@ export function softDeleteVendorLedgerEntry(id: string) {
     softDeleteRow(db, 'vendor_ledger', id);
     const now = new Date().toISOString();
     db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(entry.quantity, now, entry.product_id);
+
+    if (entry.vendor_invoice_id) {
+      syncVendorInvoiceFromLedger(db, entry.vendor_invoice_id, now);
+    }
   });
 
   transaction();
@@ -162,4 +192,31 @@ export function getTodayVendorTotal() {
     FROM vendor_ledger WHERE deleted_at IS NULL AND transaction_datetime LIKE ?
   `).get(`${today}%`) as { total: number };
   return row.total;
+}
+
+export function getPendingVendorLedgerEntries(vendorId: string) {
+  const db = getDatabase();
+  return db.prepare(`
+    SELECT vl.*, v.name as vendor_name, i.name as product_name
+    FROM vendor_ledger vl
+    LEFT JOIN vendors v ON v.id = vl.vendor_id
+    LEFT JOIN inventory i ON i.id = vl.product_id
+    WHERE vl.deleted_at IS NULL
+      AND vl.vendor_id = ?
+      AND vl.vendor_invoice_id IS NULL
+    ORDER BY vl.transaction_datetime DESC
+  `).all(vendorId) as (VendorLedgerRow & { vendor_name: string; product_name: string })[];
+}
+
+export function linkEntriesToInvoice(entryIds: string[], invoiceId: string) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const stmt = db.prepare('UPDATE vendor_ledger SET vendor_invoice_id = ?, updated_at = ?, synced = 0 WHERE id = ?');
+  const transaction = db.transaction(() => {
+    for (const id of entryIds) {
+      stmt.run(invoiceId, now, id);
+    }
+    syncVendorInvoiceFromLedger(db, invoiceId, now);
+  });
+  transaction();
 }

@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { api } from '../../services/api'
 import type { DayClosingReport, PaginatedResult } from '../../types'
 import Pagination from '../../components/ui/Pagination'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 
 export default function DayClosingPage() {
   const [data, setData] = useState<PaginatedResult<DayClosingReport> | null>(null)
@@ -9,6 +10,8 @@ export default function DayClosingPage() {
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [message, setMessage] = useState('')
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingDate, setPendingDate] = useState('')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -19,22 +22,30 @@ export default function DayClosingPage() {
 
   useEffect(() => { load() }, [load])
 
-  const handleGenerate = async () => {
-    const today = new Date().toISOString().split('T')[0]
-    const existing = await api.dayClosing.get(today)
-    if (existing) {
-      if (!confirm(`A closing report for ${today} already exists. Generate again?`)) return
-    }
+  const doGenerate = async (date: string) => {
     setGenerating(true)
     setMessage('')
     try {
-      await api.dayClosing.generate(today)
-      setMessage('Day closing report generated successfully')
+      const res = await api.dayClosing.generate(date)
+      setMessage(res.updated
+        ? 'Day closing report recalculated and updated successfully'
+        : 'Day closing report generated successfully')
       load()
     } catch (err) {
       setMessage('Failed to generate report')
     }
     setGenerating(false)
+  }
+
+  const handleGenerate = async () => {
+    const today = new Date().toISOString().split('T')[0]
+    const existing = await api.dayClosing.get(today)
+    if (existing) {
+      setPendingDate(today)
+      setConfirmOpen(true)
+      return
+    }
+    doGenerate(today)
   }
 
   const columns = [
@@ -98,6 +109,19 @@ export default function DayClosingPage() {
           </>
         )}
       </div>
+
+      <ConfirmModal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        onConfirm={() => {
+          setConfirmOpen(false)
+          doGenerate(pendingDate)
+        }}
+        title="Report Exists"
+        message={`A closing report for ${pendingDate} already exists. Generate again?`}
+        confirmLabel="Generate Again"
+        cancelLabel="Cancel"
+      />
     </div>
   )
 }

@@ -20,6 +20,11 @@ function getColumnNames(db: Database.Database, table: string): string[] {
     .map(c => c.name);
 }
 
+function getFkColumns(db: Database.Database, table: string): string[] {
+  const fks = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as { from: string; table: string; to: string }[];
+  return fks.map(f => `${f.from} → ${f.table}(${f.to})`);
+}
+
 async function pushTable(table: string): Promise<PushResult> {
   const db = getDatabase();
   const turso = getTursoClient();
@@ -38,6 +43,11 @@ async function pushTable(table: string): Promise<PushResult> {
 
     const upsertSql = `INSERT INTO ${table} (${colNames}) VALUES (${placeholders}) ON CONFLICT(id) DO UPDATE SET ${setClause}`;
 
+    const fkInfo = getFkColumns(db, table);
+    if (fkInfo.length > 0) {
+      console.log(`[pusher] ${table} FKs: ${fkInfo.join(', ')}`);
+    }
+
     for (const row of rows) {
       try {
         const cloudArgs = allCols.map(c => c === 'synced' ? 1 : row[c] as (string | number | null));
@@ -49,7 +59,9 @@ async function pushTable(table: string): Promise<PushResult> {
         db.prepare(`UPDATE ${table} SET synced = 1 WHERE id = ?`).run(row.id);
         result.pushed++;
       } catch (err) {
-        console.error(`[pusher] failed to push row ${row.id} in ${table}:`, err);
+        const fkCols = allCols.filter(c => c !== 'id' && c !== 'synced' && c !== 'created_at' && c !== 'updated_at' && c !== 'deleted_at');
+        const fkValues = fkCols.map(c => `${c}=${row[c]}`).join(', ');
+        console.error(`[pusher] failed to push row ${row.id} in ${table} (${fkValues}):`, err);
         if (!result.failedDetails) result.failedDetails = [];
         result.failedDetails.push({ id: row.id as string, error: String(err) });
         result.failed++;
@@ -65,9 +77,26 @@ async function pushTable(table: string): Promise<PushResult> {
 }
 
 export async function pushAll(tables: string[]): Promise<PushResult[]> {
+  const turso = getTursoClient();
   const results: PushResult[] = [];
+
+  try {
+    await turso.execute({ sql: 'PRAGMA foreign_keys = OFF', args: [] });
+    console.log('[pusher] disabled FK checks on remote for push phase');
+  } catch {
+    console.warn('[pusher] could not disable FK checks on remote, push may fail on FK constraints');
+  }
+
   for (const table of tables) {
     results.push(await pushTable(table));
   }
+
+  try {
+    await turso.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
+    console.log('[pusher] re-enabled FK checks on remote');
+  } catch {
+    console.warn('[pusher] could not re-enable FK checks on remote');
+  }
+
   return results;
 }

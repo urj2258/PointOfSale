@@ -67,8 +67,10 @@ CREATE TABLE IF NOT EXISTS vendor_ledger (
   updated_at TEXT NOT NULL,
   deleted_at TEXT NULL,
   synced INTEGER NOT NULL DEFAULT 0,
+  vendor_invoice_id TEXT DEFAULT NULL,
   FOREIGN KEY (vendor_id) REFERENCES vendors(id),
-  FOREIGN KEY (product_id) REFERENCES inventory(id)
+  FOREIGN KEY (product_id) REFERENCES inventory(id),
+  FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
 );
 
 CREATE TABLE IF NOT EXISTS vendor_invoices (
@@ -123,8 +125,10 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
   updated_at TEXT NOT NULL,
   deleted_at TEXT NULL,
   synced INTEGER NOT NULL DEFAULT 0,
+  invoice_id TEXT DEFAULT NULL,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
-  FOREIGN KEY (product_id) REFERENCES inventory(id)
+  FOREIGN KEY (product_id) REFERENCES inventory(id),
+  FOREIGN KEY (invoice_id) REFERENCES invoices(id)
 );
 
 CREATE TABLE IF NOT EXISTS invoices (

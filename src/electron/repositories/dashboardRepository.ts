@@ -1,12 +1,12 @@
 import { getDatabase } from '../database.js';
 
-export function getDashboardStats() {
+export function getDashboardStats(lowStockThreshold = 10) {
   const db = getDatabase();
 
   const vendorCount = (db.prepare('SELECT COUNT(*) as count FROM vendors WHERE deleted_at IS NULL').get() as { count: number }).count;
   const customerCount = (db.prepare('SELECT COUNT(*) as count FROM customers WHERE deleted_at IS NULL').get() as { count: number }).count;
   const inventoryCount = (db.prepare('SELECT COUNT(*) as count FROM inventory WHERE deleted_at IS NULL').get() as { count: number }).count;
-  const lowStockCount = (db.prepare('SELECT COUNT(*) as count FROM inventory WHERE deleted_at IS NULL AND quantity <= 10').get() as { count: number }).count;
+  const lowStockCount = (db.prepare('SELECT COUNT(*) as count FROM inventory WHERE deleted_at IS NULL AND quantity <= ?').get(lowStockThreshold) as { count: number }).count;
 
   const today = new Date().toISOString().split('T')[0];
 
@@ -66,8 +66,8 @@ export function getDashboardStats() {
   `).all() as { type: string; transaction_datetime: string; party: string; amount: number }[];
 
   const lowStockItems = db.prepare(`
-    SELECT * FROM inventory WHERE deleted_at IS NULL AND quantity <= 10 ORDER BY quantity ASC LIMIT 10
-  `).all() as { id: string; name: string; unit: string; quantity: number; description: string | null }[];
+    SELECT * FROM inventory WHERE deleted_at IS NULL AND quantity <= ? ORDER BY quantity ASC LIMIT 10
+  `).all(lowStockThreshold) as { id: string; name: string; unit: string; quantity: number; description: string | null }[];
 
   return {
     vendorCount,

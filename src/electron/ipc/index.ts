@@ -12,7 +12,6 @@ import { registerDashboardIpc } from './dashboardIpc.js';
 import { registerAuthIpc } from './authIpc.js';
 import { registerSyncIpc } from './syncIpc.js';
 import { registerDbIpc } from './dbIpc.js';
-
 export function registerAllIpcHandlers() {
   registerAuthIpc();
   registerSyncIpc();
