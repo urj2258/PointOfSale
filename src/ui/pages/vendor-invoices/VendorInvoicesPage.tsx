@@ -5,6 +5,7 @@ import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import toast from 'react-hot-toast'
 import DateInput from '../../components/ui/DateInput'
 
 interface ItemLine {
@@ -44,6 +45,8 @@ export default function VendorInvoicesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [pendingEntries, setPendingEntries] = useState<VendorLedgerEntry[]>([])
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([])
+
+
 
   useEffect(() => {
     api.vendors.list(undefined, 1, 999).then((r: PaginatedResult<Vendor>) => setVendors(r.data)).catch(() => {})
@@ -110,13 +113,13 @@ export default function VendorInvoicesPage() {
 
   const recalc = (f: typeof form) => {
     const subtotal = f.items.reduce((s, i) => s + i.quantity * i.ratePerUnit, 0)
-    const total = subtotal + f.tax_amount - f.discount_amount
+    const total = subtotal - f.discount_amount
     return { ...f, subtotal, total: Math.max(0, total) }
   }
 
   const openCreate = () => {
     setEditing(null)
-    setForm(emptyForm)
+    setForm({ ...emptyForm, invoice_number: `VINV-${Date.now()}` })
     setError('')
     setPendingEntries([])
     setSelectedEntryIds([])
@@ -195,20 +198,25 @@ export default function VendorInvoicesPage() {
     const items = form.items.map(i => ({ productId: i.productId, quantity: i.quantity, ratePerUnit: i.ratePerUnit }))
     const isoIssue = toISO(form.issue_date)
     const isoDue = toISO(form.due_date)
-    if (editing) {
-      await api.vendorInvoices.update(editing.id, form.vendor_id, form.invoice_number, isoIssue, isoDue,
-        form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount, editing.status, form.notes || undefined)
-      await api.vendorInvoices.replaceItems(editing.id, items)
-    } else {
-      const newInv = await api.vendorInvoices.create(form.vendor_id, form.invoice_number, isoIssue, isoDue,
-        form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount,
-        form.notes || undefined, items) as VendorInvoice
-      if (selectedEntryIds.length > 0 && newInv?.id) {
-        await api.vendorLedger.linkToInvoice(selectedEntryIds, newInv.id)
+    try {
+      if (editing) {
+        await api.vendorInvoices.update(editing.id, form.vendor_id, form.invoice_number, isoIssue, isoDue,
+          form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount, editing.status, form.notes || undefined)
+        await api.vendorInvoices.replaceItems(editing.id, items)
+      } else {
+        const newInv = await api.vendorInvoices.create(form.vendor_id, form.invoice_number, isoIssue, isoDue,
+          form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount,
+          form.notes || undefined, items) as VendorInvoice
+        if (selectedEntryIds.length > 0 && newInv?.id) {
+          await api.vendorLedger.linkToInvoice(selectedEntryIds, newInv.id)
+        }
       }
+      setModalOpen(false)
+      load()
+      toast.success(editing ? 'Vendor invoice updated successfully' : 'Vendor invoice created successfully')
+    } catch {
+      toast.error('Failed to save vendor invoice')
     }
-    setModalOpen(false)
-    load()
   }
 
   const handleDelete = (inv: VendorInvoice) => {
@@ -320,9 +328,9 @@ const statusColor: Record<string, string> = {
             </div>
             <div>
               <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Invoice # *</label>
-              <input type="text" value={form.invoice_number} onChange={(e) => setForm({ ...form, invoice_number: e.target.value })}
+              <input type="text" value={form.invoice_number} readOnly
                 placeholder="P-INV-2026-001"
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-100 dark:bg-white/[0.02] text-sm text-gray-500 dark:text-gray-400 focus:outline-none cursor-not-allowed" />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -334,6 +342,7 @@ const statusColor: Record<string, string> = {
             <div>
               <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Due Date *</label>
               <DateInput value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })}
+                minDate={form.issue_date ? new Date(Number(form.issue_date.split('/')[2]), Number(form.issue_date.split('/')[1]) - 1, Number(form.issue_date.split('/')[0])) : undefined}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
           </div>
@@ -389,16 +398,10 @@ const statusColor: Record<string, string> = {
             ))}
           </div>
 
-          <div className="grid grid-cols-3 gap-3 pt-2">
+          <div className="grid grid-cols-2 gap-3 pt-2">
             <div>
               <label className="block text-xs font-medium text-brand-text-muted mb-1">Subtotal</label>
               <p className="text-sm font-semibold text-brand-text-primary">Rs {form.subtotal.toFixed(2)}</p>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-brand-text-muted mb-1">Tax</label>
-              <input type="number" value={form.tax_amount || ''} onChange={(e) => setForm(recalc({ ...form, tax_amount: Number(e.target.value) }))}
-                min="0" step="0.01"
-                className="w-full px-2 py-1 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
             <div>
               <label className="block text-xs font-medium text-brand-text-muted mb-1">Discount</label>
@@ -430,7 +433,7 @@ const statusColor: Record<string, string> = {
         </div>
       </Modal>
       <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
-        onConfirm={async () => { if (deletingId) { await api.vendorInvoices.delete(deletingId); setDeletingId(null); load() } }}
+        onConfirm={async () => { if (deletingId) { try { await api.vendorInvoices.delete(deletingId); toast.success('Vendor invoice deleted successfully') } catch { toast.error('Failed to delete vendor invoice') } setDeletingId(null); load() } }}
         title="Delete Vendor Invoice"
         message={`Are you sure you want to delete vendor invoice "${data?.data.find(v => v.id === deletingId)?.invoice_number}"? This action cannot be undone.`}
         confirmLabel="Delete" danger />

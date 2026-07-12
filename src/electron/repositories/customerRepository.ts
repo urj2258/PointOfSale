@@ -56,7 +56,33 @@ export function updateCustomer(id: string, name: string, phone?: string, address
 
 export function softDeleteCustomer(id: string) {
   const db = getDatabase();
-  softDeleteRow(db, 'customers', id);
+  const now = new Date().toISOString();
+
+  const transaction = db.transaction(() => {
+    const ledgerEntries = db.prepare(
+      'SELECT id, quantity, product_id FROM customer_ledger WHERE customer_id = ? AND deleted_at IS NULL'
+    ).all(id) as { id: string; quantity: number; product_id: string }[];
+
+    for (const entry of ledgerEntries) {
+      softDeleteRow(db, 'customer_ledger', entry.id);
+      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
+        .run(entry.quantity, now, entry.product_id);
+    }
+
+    const invoices = db.prepare(
+      'SELECT id FROM invoices WHERE customer_id = ? AND deleted_at IS NULL'
+    ).all(id) as { id: string }[];
+
+    for (const invoice of invoices) {
+      db.prepare('UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL')
+        .run(now, now, invoice.id);
+      softDeleteRow(db, 'invoices', invoice.id);
+    }
+
+    softDeleteRow(db, 'customers', id);
+  });
+
+  transaction();
 }
 
 export function getCustomerOutstanding(id: string) {

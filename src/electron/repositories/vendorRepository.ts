@@ -56,7 +56,33 @@ export function updateVendor(id: string, name: string, phone?: string, address?:
 
 export function softDeleteVendor(id: string) {
   const db = getDatabase();
-  softDeleteRow(db, 'vendors', id);
+  const now = new Date().toISOString();
+
+  const transaction = db.transaction(() => {
+    const ledgerEntries = db.prepare(
+      'SELECT id, quantity, product_id FROM vendor_ledger WHERE vendor_id = ? AND deleted_at IS NULL'
+    ).all(id) as { id: string; quantity: number; product_id: string }[];
+
+    for (const entry of ledgerEntries) {
+      softDeleteRow(db, 'vendor_ledger', entry.id);
+      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
+        .run(entry.quantity, now, entry.product_id);
+    }
+
+    const invoices = db.prepare(
+      'SELECT id FROM vendor_invoices WHERE vendor_id = ? AND deleted_at IS NULL'
+    ).all(id) as { id: string }[];
+
+    for (const invoice of invoices) {
+      db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL')
+        .run(now, now, invoice.id);
+      softDeleteRow(db, 'vendor_invoices', invoice.id);
+    }
+
+    softDeleteRow(db, 'vendors', id);
+  });
+
+  transaction();
 }
 
 export function getVendorOutstanding(id: string) {

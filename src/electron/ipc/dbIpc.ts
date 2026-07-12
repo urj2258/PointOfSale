@@ -10,8 +10,17 @@ export function registerDbIpc() {
       if (!fs.existsSync(srcPath)) return { success: false, error: 'Database file not found' };
 
       const dir = destDir || app.getPath('desktop');
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const destPath = path.join(dir, `pos-backup-${timestamp}.db`);
+      const destPath = path.join(dir, `pos-backup.db`);
+
+      // Clean up any old timestamped backup files (pos-backup-*.db)
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (/^pos-backup-.+\.db$/.test(file)) {
+            fs.unlinkSync(path.join(dir, file));
+          }
+        }
+      } catch { /* ignore cleanup errors */ }
 
       fs.copyFileSync(srcPath, destPath);
       return { success: true, path: destPath };

@@ -6,6 +6,7 @@ import Pagination from '../../components/ui/Pagination'
 import SearchInput from '../../components/ui/SearchInput'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import toast from 'react-hot-toast'
 
 type Form = { name: string; phone: string; address: string; mill_name: string }
 type FieldErrors = { name?: string; phone?: string; address?: string; mill_name?: string }
@@ -68,6 +69,8 @@ export default function VendorsPage() {
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -135,8 +138,10 @@ export default function VendorsPage() {
       }
       setModalOpen(false)
       load()
+      toast.success(editing ? 'Vendor updated successfully' : 'Vendor created successfully')
     } catch {
       setServerError('An unexpected error occurred. Please try again.')
+      toast.error('An unexpected error occurred')
     }
   }
 
@@ -210,7 +215,7 @@ export default function VendorsPage() {
         </div>
       </Modal>
       <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
-        onConfirm={async () => { if (deletingId) { await api.vendors.delete(deletingId); setDeletingId(null); load() } }}
+        onConfirm={async () => { if (deletingId) { try { await api.vendors.delete(deletingId); toast.success('Vendor deleted successfully') } catch { toast.error('Failed to delete vendor') } setDeletingId(null); load() } }}
         title="Delete Vendor"
         message={`Are you sure you want to delete vendor "${data?.data.find(v => v.id === deletingId)?.name}"? This action cannot be undone.`}
         confirmLabel="Delete" danger />

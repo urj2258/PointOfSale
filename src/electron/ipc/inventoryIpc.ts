@@ -2,7 +2,7 @@ import { ipcMain } from 'electron';
 import * as inventoryRepo from '../repositories/inventoryRepository.js';
 import {
   assertNonEmptyString, assertOptionalString, assertPositiveNumber,
-  assertProductName, assertAllowedUnit, assertNonNegativeInteger, assertDescription,
+  assertProductName, assertAllowedUnit, assertNonNegativeInteger, assertDescription, assertInteger,
   handleIpcError,
 } from '../validation.js';
 
@@ -48,7 +48,7 @@ export function registerInventoryIpc() {
   ipcMain.handle('inventory:adjust-stock', (_e, id: string, quantityChange: number) => {
     try {
       assertNonEmptyString(id, 'id');
-      assertNonNegativeInteger(quantityChange, 'quantity_change');
+      assertInteger(quantityChange, 'quantity_change');
       return inventoryRepo.adjustStock(id, quantityChange);
     } catch (err) {
       return handleIpcError(err);

@@ -1,4 +1,4 @@
-import { forwardRef } from 'react'
+import { forwardRef, useEffect } from 'react'
 import DatePicker from 'react-datepicker'
 import 'react-datepicker/dist/react-datepicker.css'
 
@@ -24,6 +24,10 @@ function formatDisplayDatetime(date: Date): string {
   return `${dd}/${mm}/${yyyy} ${hh}:${mi}`
 }
 
+function nowDisplayDatetime(): string {
+  return formatDisplayDatetime(new Date())
+}
+
 interface DateTimeInputProps {
   value: string
   onChange: (val: string) => void
@@ -47,6 +51,12 @@ const CustomInput = forwardRef<HTMLInputElement, { value?: string; onClick?: () 
 CustomInput.displayName = 'DateTimeInputCustom'
 
 export default function DateTimeInput({ value, onChange, placeholder = 'dd/mm/yyyy HH:MM', className = '' }: DateTimeInputProps) {
+  useEffect(() => {
+    if (!value) {
+      onChange(nowDisplayDatetime())
+    }
+  }, [])
+
   return (
     <DatePicker
       selected={parseDisplayDatetime(value)}

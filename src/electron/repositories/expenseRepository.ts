@@ -46,7 +46,15 @@ export function updateExpenseCategory(id: string, name: string) {
 
 export function deleteExpenseCategory(id: string) {
   const db = getDatabase();
-  softDeleteRow(db, 'expense_categories', id);
+  const now = new Date().toISOString();
+
+  const transaction = db.transaction(() => {
+    db.prepare('UPDATE expenses SET deleted_at = ?, updated_at = ?, synced = 0 WHERE category_id = ? AND deleted_at IS NULL')
+      .run(now, now, id);
+    softDeleteRow(db, 'expense_categories', id);
+  });
+
+  transaction();
 }
 
 export function getExpenses(categoryId?: string, month?: string, page = 1, limit = 20) {

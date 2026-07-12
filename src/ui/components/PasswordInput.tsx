@@ -13,7 +13,7 @@ export default function PasswordInput({ label, className = '', ...props }: Props
       <div className="relative">
         <input
           type={show ? 'text' : 'password'}
-          className={`w-full px-4 py-2.5 pr-11 rounded-input bg-brand-surface/50 border border-brand-border text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none focus:border-brand-primary transition-colors ${className}`}
+          className={`w-full px-4 py-2.5 pr-11 rounded-input bg-white/20 dark:bg-white/[0.08] border border-white/40 dark:border-white/[0.12] text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none focus:border-brand-primary focus:bg-white/30 dark:focus:bg-white/[0.12] transition-colors caret-brand-primary ${className}`}
           {...props}
         />
         <button

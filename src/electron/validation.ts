@@ -223,6 +223,10 @@ export function assertNonNegativeInteger(value: unknown, field: string): asserts
   assert(isNonNegativeInteger(value), `${formatField(field)} must be a valid whole number (0 or greater)`);
 }
 
+export function assertInteger(value: unknown, field: string): asserts value is number {
+  assert(typeof value === 'number' && Number.isFinite(value) && Number.isInteger(value) && value !== 0, `${formatField(field)} must be a non-zero whole number`);
+}
+
 export function assertDescription(value: unknown, field: string): asserts value is string {
   assert(isDescription(value), `${formatField(field)} must be 5-500 characters and cannot be purely numbers or special characters`);
 }

@@ -141,7 +141,7 @@ export default function SettingsPage() {
     try {
       const res = await api.db.export(exportPath || undefined)
       if (res.success) {
-        setExportMsg(`Exported to: ${res.path}`)
+        setExportMsg('Database exported successfully.')
       } else {
         setExportMsg(res.error || 'Export failed')
       }

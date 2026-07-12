@@ -6,17 +6,18 @@ import Pagination from '../../components/ui/Pagination'
 import SearchInput from '../../components/ui/SearchInput'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import toast from 'react-hot-toast'
 
 const ALLOWED_UNITS = [
-  'bag', 'bags', 'ton', 'tons', 'kg', 'kgs', 'gram', 'grams',
-  'liter', 'liters', 'ml', 'meter', 'meters', 'cm', 'mm',
+  'bag',  'ton' , 'kg' , 'gram',
+  'liter', 'ml', 'meter',  'cm', 'mm',
   'feet', 'foot', 'inch', 'inches', 'yard', 'yards',
-  'pieces', 'piece', 'pcs', 'box', 'boxes', 'carton', 'cartons',
-  'roll', 'rolls', 'drum', 'drums', 'can', 'cans',
-  'bottle', 'bottles', 'sack', 'sacks', 'bundle', 'bundles',
-  'sheet', 'sheets', 'coil', 'coils', 'tank', 'tanks',
-  'set', 'sets', 'pair', 'pairs', 'unit', 'units',
-  'dozen', 'dozens', 'quintal', 'quintals',
+  'pieces', , 'pcs', 'box', , 'carton', 
+  'roll',  'drum', 'can', 
+  'bottle', 'sack', , 'bundle', 
+  'sheet', 'sheets', 'coil', 'coils', 'tank', 
+  'set', 'sets', 'pair', 'pairs', 'unit', 
+  'dozen', 'quintal'
 ]
 
 type Form = { name: string; unit: string; quantity: string; description: string }
@@ -82,6 +83,8 @@ export default function InventoryPage() {
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -153,6 +156,12 @@ export default function InventoryPage() {
       let result: any
       if (editing) {
         result = await api.inventory.update(editing.id, form.name.trim(), form.unit.trim().toLowerCase(), form.description.trim() || undefined)
+        // Also update quantity if it changed
+        const newQty = Number(form.quantity)
+        const diff = newQty - editing.quantity
+        if (diff !== 0) {
+          await api.inventory.adjustStock(editing.id, diff)
+        }
       } else {
         result = await api.inventory.create(form.name.trim(), form.unit.trim().toLowerCase(), Number(form.quantity), form.description.trim() || undefined)
       }
@@ -162,8 +171,10 @@ export default function InventoryPage() {
       }
       setModalOpen(false)
       load()
+      toast.success(editing ? 'Product updated successfully' : 'Product created successfully')
     } catch {
       setServerError('An unexpected error occurred. Please try again.')
+      toast.error('An unexpected error occurred')
     }
   }
 
@@ -186,6 +197,7 @@ export default function InventoryPage() {
     await api.inventory.adjustStock(stockItem.id, n)
     setStockModalOpen(false)
     load()
+    toast.success('Stock adjusted successfully')
   }
 
   const handleDelete = (item: InventoryItem) => {
@@ -238,18 +250,7 @@ export default function InventoryPage() {
 
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
         <DataTable
-          columns={[
-            ...columns,
-            {
-              key: 'stock_action', label: '',
-              render: (item: InventoryItem) => (
-                <button onClick={() => openStock(item)}
-                  className="text-xs px-2 py-1 rounded-lg bg-brand-primary/20 text-brand-text-primary hover:bg-brand-primary/30 transition-colors">
-                  Adjust Stock
-                </button>
-              ),
-            },
-          ]}
+          columns={columns}
           data={data?.data ?? []}
           onEdit={openEdit}
           onDelete={handleDelete}
@@ -296,28 +297,9 @@ export default function InventoryPage() {
         </div>
       </Modal>
 
-      <Modal open={stockModalOpen} onClose={() => setStockModalOpen(false)} title={`Adjust Stock — ${stockItem?.name}`}>
-        <div className="space-y-4">
-          {serverError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{serverError}</p>}
-          <p className="text-sm text-brand-text-muted">Current stock: <strong>{stockItem?.quantity} {stockItem?.unit}</strong></p>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Quantity Change</label>
-            <input type="number" step={1} value={stockForm.change} onChange={(e) => setStockForm({ change: e.target.value })}
-              placeholder="Positive to add, negative to remove"
-              onKeyDown={(e) => { if (e.key === '.' || e.key === 'e') e.preventDefault() }}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-          </div>
-          {stockForm.change !== '0' && Number(stockForm.change) !== 0 && (
-            <p className="text-sm text-brand-text-muted">New stock will be: <strong>{(stockItem?.quantity ?? 0) + Number(stockForm.change)} {stockItem?.unit}</strong></p>
-          )}
-          <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setStockModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleStockSubmit} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90">Update Stock</button>
-          </div>
-        </div>
-      </Modal>
+
       <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
-        onConfirm={async () => { if (deletingId) { await api.inventory.delete(deletingId); setDeletingId(null); load() } }}
+        onConfirm={async () => { if (deletingId) { try { await api.inventory.delete(deletingId); toast.success('Product deleted successfully') } catch { toast.error('Failed to delete product') } setDeletingId(null); load() } }}
         title="Delete Item"
         message={`Are you sure you want to delete "${data?.data.find(v => v.id === deletingId)?.name}"? This action cannot be undone.`}
         confirmLabel="Delete" danger />

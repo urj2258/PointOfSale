@@ -172,13 +172,22 @@ export function softDeleteVendorLedgerEntry(id: string) {
   if (!entry) throw new Error('Vendor ledger entry not found');
 
   const transaction = db.transaction(() => {
-    softDeleteRow(db, 'vendor_ledger', id);
     const now = new Date().toISOString();
-    db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(entry.quantity, now, entry.product_id);
 
+    // Cascade: soft-delete linked invoice + items
     if (entry.vendor_invoice_id) {
-      syncVendorInvoiceFromLedger(db, entry.vendor_invoice_id, now);
+      db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL')
+        .run(now, now, entry.vendor_invoice_id);
+      db.prepare('UPDATE vendor_invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL')
+        .run(now, now, entry.vendor_invoice_id);
     }
+
+    // Reverse inventory
+    db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
+      .run(entry.quantity, now, entry.product_id);
+
+    // Soft-delete the ledger entry itself (last)
+    softDeleteRow(db, 'vendor_ledger', id);
   });
 
   transaction();

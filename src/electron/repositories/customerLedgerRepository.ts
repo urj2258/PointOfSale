@@ -173,13 +173,22 @@ export function softDeleteCustomerLedgerEntry(id: string) {
   if (!entry) throw new Error('Customer ledger entry not found');
 
   const transaction = db.transaction(() => {
-    softDeleteRow(db, 'customer_ledger', id);
     const now = new Date().toISOString();
-    db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(entry.quantity, now, entry.product_id);
 
+    // Cascade: soft-delete linked invoice + items
     if (entry.invoice_id) {
-      syncCustomerInvoiceFromLedger(db, entry.invoice_id, now);
+      db.prepare('UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL')
+        .run(now, now, entry.invoice_id);
+      db.prepare('UPDATE invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL')
+        .run(now, now, entry.invoice_id);
     }
+
+    // Restore inventory
+    db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
+      .run(entry.quantity, now, entry.product_id);
+
+    // Soft-delete the ledger entry itself (last)
+    softDeleteRow(db, 'customer_ledger', id);
   });
 
   transaction();

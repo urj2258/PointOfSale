@@ -5,6 +5,7 @@ import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import toast from 'react-hot-toast'
 import DateTimeInput from '../../components/ui/DateTimeInput'
 
 const toISODatetime = (dt: string) => {
@@ -52,6 +53,8 @@ export default function ExpensesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingType, setDeletingType] = useState<'expense' | 'category'>('expense')
 
+
+
   const loadExpenses = useCallback(async () => {
     setLoading(true)
     const result = await api.expenses.list(filterCategory || undefined, filterMonth || undefined, page, 20)
@@ -90,18 +93,26 @@ export default function ExpensesPage() {
   }
 
   const handleExpenseSubmit = async () => {
-    if (!expForm.category_id || !expForm.transaction_datetime || Number(expForm.amount) <= 0) {
-      setError('Fill all required fields'); return
+    if (!expForm.category_id || !expForm.transaction_datetime) {
+      toast.error('Fill all required fields'); return
+    }
+    if (Number(expForm.amount) <= 0) {
+      toast.error('Amount must be a positive value'); return
     }
     setError('')
     const isoDt = toISODatetime(expForm.transaction_datetime)
-    if (editingExpense) {
-      await api.expenses.update(editingExpense.id, expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
-    } else {
-      await api.expenses.create(expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
+    try {
+      if (editingExpense) {
+        await api.expenses.update(editingExpense.id, expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
+      } else {
+        await api.expenses.create(expForm.category_id, isoDt, Number(expForm.amount), expForm.description || undefined)
+      }
+      setExpenseModal(false)
+      loadExpenses()
+      toast.success(editingExpense ? 'Expense updated successfully' : 'Expense created successfully')
+    } catch {
+      toast.error('Failed to save expense')
     }
-    setExpenseModal(false)
-    loadExpenses()
   }
 
   const handleDeleteExpense = (exp: Expense) => {
@@ -126,13 +137,18 @@ export default function ExpensesPage() {
   const handleCatSubmit = async () => {
     if (!catForm.name.trim()) { setError('Name is required'); return }
     setError('')
-    if (editingCat) {
-      await api.expenseCategories.update(editingCat.id, catForm.name)
-    } else {
-      await api.expenseCategories.create(catForm.name)
+    try {
+      if (editingCat) {
+        await api.expenseCategories.update(editingCat.id, catForm.name)
+      } else {
+        await api.expenseCategories.create(catForm.name)
+      }
+      setCatModal(false)
+      loadCategories()
+      toast.success(editingCat ? 'Category updated successfully' : 'Category created successfully')
+    } catch {
+      toast.error('Failed to save category')
     }
-    setCatModal(false)
-    loadCategories()
   }
 
   const handleDeleteCat = (cat: ExpenseCategory) => {
@@ -144,7 +160,7 @@ export default function ExpensesPage() {
     { key: 'transaction_datetime', label: 'Date', render: (e: Expense) => new Date(e.transaction_datetime).toLocaleDateString() },
     { key: 'category_name', label: 'Category' },
     { key: 'amount', label: 'Amount', render: (e: Expense) => `Rs. ${e.amount.toLocaleString()}` },
-    { key: 'description', label: 'Description' },
+    { key: 'description', label: 'Description', render: (e: Expense) => <span className="whitespace-normal break-words max-w-xs block">{e.description || '—'}</span> },
   ]
 
   const catColumns = [
@@ -209,7 +225,7 @@ export default function ExpensesPage() {
 
       <Modal open={expenseModal} onClose={() => setExpenseModal(false)} title={editingExpense ? 'Edit Expense' : 'Add Expense'}>
         <div className="space-y-4">
-          {error && <p className="text-sm text-red-500">{error}</p>}
+
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Category *</label>
             <select value={expForm.category_id} onChange={(e) => setExpForm({ ...expForm, category_id: e.target.value })}
@@ -258,7 +274,12 @@ export default function ExpensesPage() {
         onClose={() => { setDeletingId(null) }}
         onConfirm={async () => {
           if (!deletingId) return
-          if (deletingType === 'expense') { await api.expenses.delete(deletingId) } else { await api.expenseCategories.delete(deletingId) }
+          try {
+            if (deletingType === 'expense') { await api.expenses.delete(deletingId) } else { await api.expenseCategories.delete(deletingId) }
+            toast.success(deletingType === 'expense' ? 'Expense deleted successfully' : 'Category deleted successfully')
+          } catch {
+            toast.error(deletingType === 'expense' ? 'Failed to delete expense' : 'Failed to delete category')
+          }
           setDeletingId(null)
           deletingType === 'expense' ? loadExpenses() : loadCategories()
         }}

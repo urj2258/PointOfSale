@@ -5,6 +5,7 @@ import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import toast from 'react-hot-toast'
 import DateInput from '../../components/ui/DateInput'
 import DateTimeInput from '../../components/ui/DateTimeInput'
 
@@ -27,6 +28,15 @@ const fmtDatetime = (dt: string) => {
   const [datePart, timePart] = dt.split('T')
   const [y, m, d] = datePart.split('-')
   return `${d}/${m}/${y} ${timePart || ''}`
+}
+function localNow(): string {
+  const n = new Date()
+  const dd = String(n.getDate()).padStart(2, '0')
+  const mm = String(n.getMonth() + 1).padStart(2, '0')
+  const yyyy = n.getFullYear()
+  const hh = String(n.getHours()).padStart(2, '0')
+  const mi = String(n.getMinutes()).padStart(2, '0')
+  return `${dd}/${mm}/${yyyy} ${hh}:${mi}`
 }
 const toISODatetime = (dt: string) => {
   if (!dt) return ''
@@ -58,6 +68,8 @@ export default function VendorLedgerPage() {
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
+
+
   const load = useCallback(async () => {
     setLoading(true)
     const result = await api.vendorLedger.list(
@@ -75,9 +87,8 @@ export default function VendorLedgerPage() {
   }, [])
 
   const openCreate = () => {
-    const now = new Date().toISOString().slice(0, 16)
     setEditing(null)
-    setForm({ vendor_id: '', product_id: '', transaction_datetime: fmtDatetime(now), quantity: '', rate_per_unit: '', total_payment: '', paid_amount: '', description: '', vehicle_number: '' })
+    setForm({ vendor_id: '', product_id: '', transaction_datetime: localNow(), quantity: '', rate_per_unit: '', total_payment: '', paid_amount: '', description: '', vehicle_number: '' })
     setError('')
     setModalOpen(true)
   }
@@ -96,23 +107,28 @@ export default function VendorLedgerPage() {
   }
 
   const handleSubmit = async () => {
-    if (!form.vendor_id || !form.product_id || !form.transaction_datetime) { setError('Fill required fields'); return }
-    if (Number(form.quantity) <= 0 || Number(form.rate_per_unit) <= 0) { setError('Quantity and rate must be positive'); return }
-    if (Number(form.paid_amount) > Number(form.total_payment)) { setError('Paid amount cannot exceed total payment'); return }
+    if (!form.vendor_id || !form.product_id || !form.transaction_datetime) { toast.error('Fill required fields'); return }
+    if (Number(form.quantity) <= 0 || Number(form.rate_per_unit) <= 0) { toast.error('Quantity and rate must be positive'); return }
+    if (Number(form.paid_amount) > Number(form.total_payment)) { toast.error('Paid amount cannot exceed total payment'); return }
     setError('')
     const isoDt = toISODatetime(form.transaction_datetime)
-    if (editing) {
-      await api.vendorLedger.update(editing.id,
-        form.vendor_id, form.product_id, isoDt,
-        Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
-        form.description || undefined, form.vehicle_number || undefined)
-    } else {
-      await api.vendorLedger.create(form.vendor_id, form.product_id, isoDt,
-        Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
-        form.description || undefined, form.vehicle_number || undefined)
+    try {
+      if (editing) {
+        await api.vendorLedger.update(editing.id,
+          form.vendor_id, form.product_id, isoDt,
+          Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
+          form.description || undefined, form.vehicle_number || undefined)
+      } else {
+        await api.vendorLedger.create(form.vendor_id, form.product_id, isoDt,
+          Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
+          form.description || undefined, form.vehicle_number || undefined)
+      }
+      setModalOpen(false)
+      load()
+      toast.success(editing ? 'Purchase entry updated successfully' : 'Purchase entry created successfully')
+    } catch {
+      toast.error('Failed to save purchase entry')
     }
-    setModalOpen(false)
-    load()
   }
 
   const handleDelete = (entry: VendorLedgerEntry) => {
@@ -209,12 +225,12 @@ export default function VendorLedgerPage() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Quantity *</label>
-              <input type="number" value={form.quantity} placeholder="0" onChange={(e) => setForm({ ...form, quantity: e.target.value })} onFocus={(e) => e.target.select()}
+              <input type="number" value={form.quantity} placeholder="0" onChange={(e) => { const q = e.target.value; const t = Number(q) * Number(form.rate_per_unit); setForm({ ...form, quantity: q, total_payment: t > 0 ? String(t) : '' }) }} onFocus={(e) => e.target.select()}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
             <div>
               <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Rate/Unit *</label>
-              <input type="number" value={form.rate_per_unit} placeholder="0" onChange={(e) => setForm({ ...form, rate_per_unit: e.target.value })} onFocus={(e) => e.target.select()}
+              <input type="number" value={form.rate_per_unit} placeholder="0" onChange={(e) => { const r = e.target.value; const t = Number(form.quantity) * Number(r); setForm({ ...form, rate_per_unit: r, total_payment: t > 0 ? String(t) : '' }) }} onFocus={(e) => e.target.select()}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
           </div>
@@ -251,7 +267,7 @@ export default function VendorLedgerPage() {
         </div>
       </Modal>
       <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
-        onConfirm={async () => { if (deletingId) { await api.vendorLedger.delete(deletingId); setDeletingId(null); load() } }}
+        onConfirm={async () => { if (deletingId) { try { await api.vendorLedger.delete(deletingId); toast.success('Purchase entry deleted successfully') } catch { toast.error('Failed to delete purchase entry') } setDeletingId(null); load() } }}
         title="Delete Purchase Entry"
         message="Are you sure you want to delete this purchase entry? This action cannot be undone."
         confirmLabel="Delete" danger />
