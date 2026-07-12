@@ -48,6 +48,28 @@ export function createCustomer(name: string, phone?: string, address?: string, s
   return getCustomerById(id);
 }
 
+import Database from 'better-sqlite3';
+
+/**
+ * Low-level insert usable inside an external db.transaction().
+ * Does NOT open its own transaction — caller is responsible.
+ */
+export function insertCustomerInTx(
+  db: Database.Database,
+  id: string,
+  now: string,
+  name: string,
+  phone: string,
+  address: string,
+  shop_name?: string
+): void {
+  db.prepare(`
+    INSERT INTO customers (id, name, phone, address, shop_name, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone, address, shop_name ?? null, now, now);
+}
+
+
 export function updateCustomer(id: string, name: string, phone?: string, address?: string, shop_name?: string) {
   const db = getDatabase();
   updateRow(db, 'customers', id, { name, phone: phone ?? null, address: address ?? null, shop_name: shop_name ?? null });

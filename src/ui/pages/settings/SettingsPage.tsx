@@ -3,6 +3,7 @@ import { useAuth } from '../../context/AuthContext'
 import { useNotifications } from '../../context/NotificationContext'
 import { api } from '../../services/api'
 import { useTheme } from '../../hooks/useTheme'
+import toast from 'react-hot-toast'
 
 interface FailedDetail {
   id: string
@@ -71,8 +72,8 @@ export default function SettingsPage() {
       setResult(res)
 
       const totalFailed = [...res.pushResults, ...res.pullResults].reduce((s, r) => s + (r.failed > 0 ? r.failed : 0), 0)
-      const totalPushed = res.pushResults.reduce((s, r) => s + (r.pushed ?? 0), 0)
-      const totalPulled = res.pullResults.reduce((s, r) => s + (r.pulled ?? 0), 0)
+      const totalPushed = res.pushResults.filter(r => r.table !== 'audit_logs').reduce((s, r) => s + (r.pushed ?? 0), 0)
+      const totalPulled = res.pullResults.filter(r => r.table !== 'audit_logs').reduce((s, r) => s + (r.pulled ?? 0), 0)
 
       if (totalFailed > 0) {
         const pushFailDesc = buildFailureDesc(res.pushResults, 'push')
@@ -81,6 +82,7 @@ export default function SettingsPage() {
         if (pushFailDesc) descParts.push(`\nPush failures:\n${pushFailDesc}`)
         if (pullFailDesc) descParts.push(`\nPull failures:\n${pullFailDesc}`)
 
+        toast.error(`Sync ${res.success ? 'completed with errors' : 'failed'}`);
         addNotification({
           type: res.pushResults.some(r => r.error) || res.pullResults.some(r => r.error) ? 'sync_failure' : 'sync_partial',
           title: `Sync ${res.success ? 'completed with errors' : 'failed'}`,
@@ -88,6 +90,7 @@ export default function SettingsPage() {
           color: 'accent-orange',
         })
       } else {
+        toast.success('Sync completed successfully!');
         addNotification({
           type: 'sync_success',
           title: 'Sync completed',
@@ -96,6 +99,7 @@ export default function SettingsPage() {
         })
       }
     } catch (err) {
+      toast.error(String(err));
       setSyncError(String(err))
     } finally {
       setSyncing(false)
@@ -111,24 +115,28 @@ export default function SettingsPage() {
       setPullResult(res)
 
       const totalFailed = res.pullResults.reduce((s, r) => s + (r.failed > 0 ? r.failed : 0), 0)
+      const pullTotal = res.pullResults.filter(r => r.table !== 'audit_logs').reduce((s, r) => s + (r.pulled ?? 0), 0)
 
       if (totalFailed > 0) {
         const pullFailDesc = buildFailureDesc(res.pullResults, 'pull')
+        toast.error('Pull completed with errors');
         addNotification({
           type: totalFailed > 0 ? 'sync_partial' : 'sync_success',
           title: 'Pull completed with errors',
-          desc: `Pulled: ${res.pullResults.reduce((s, r) => s + (r.pulled ?? 0), 0)} | Failed: ${totalFailed}${pullFailDesc ? '\n' + pullFailDesc : ''}`,
+          desc: `Pulled: ${pullTotal} | Failed: ${totalFailed}${pullFailDesc ? '\n' + pullFailDesc : ''}`,
           color: 'accent-orange',
         })
       } else {
+        toast.success('Pull completed successfully!');
         addNotification({
           type: 'sync_success',
           title: 'Pull completed',
-          desc: `Pulled: ${res.pullResults.reduce((s, r) => s + (r.pulled ?? 0), 0)}`,
+          desc: `Pulled: ${pullTotal}`,
           color: 'accent-success',
         })
       }
     } catch (err) {
+      toast.error(String(err));
       setPullError(String(err))
     } finally {
       setPulling(false)
@@ -137,16 +145,15 @@ export default function SettingsPage() {
 
   const handleExport = async () => {
     setExporting(true)
-    setExportMsg(null)
     try {
       const res = await api.db.export(exportPath || undefined)
       if (res.success) {
-        setExportMsg('Database exported successfully.')
+        toast.success('Database exported successfully.')
       } else {
-        setExportMsg(res.error || 'Export failed')
+        toast.error(res.error || 'Export failed')
       }
     } catch (err) {
-      setExportMsg(String(err))
+      toast.error(String(err))
     } finally {
       setExporting(false)
     }
@@ -158,26 +165,25 @@ export default function SettingsPage() {
       if (res.canceled) return
       setExportPath(res.path)
       localStorage.setItem('export_path', res.path)
-      setExportMsg(`Export path set to: ${res.path}`)
+      toast.success(`Export path set to: ${res.path}`)
     } catch (err) {
-      setExportMsg(String(err))
+      toast.error(String(err))
     }
   }
 
   const handleImport = async () => {
     setImporting(true)
-    setImportMsg(null)
     try {
       const res = await api.db.import()
       if (res.canceled) {
-        setImportMsg(null)
+        // do nothing
       } else if (res.success) {
-        setImportMsg('Database restored successfully. Refresh the app to see the changes.')
+        toast.success('Database restored successfully. Refresh the app to see the changes.')
       } else {
-        setImportMsg(res.error || 'Import failed')
+        toast.error(res.error || 'Import failed')
       }
     } catch (err) {
-      setImportMsg(String(err))
+      toast.error(String(err))
     } finally {
       setImporting(false)
     }
@@ -213,6 +219,18 @@ export default function SettingsPage() {
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Backup &amp; Sync</h2>
         <p className="text-sm text-brand-text-muted">Sync local data to the cloud database.</p>
+        
+        <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+          <div className="text-red-600 dark:text-red-400 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">Emergency Protocol</h3>
+            <p className="text-xs text-red-700 dark:text-red-400/90 mt-1">
+              If the Sync engine ever fails to push your data to the cloud, <strong>immediately</strong> go to the Database section below and click <strong>Export Database</strong> to save a local copy of your data, then contact the developers ASAP!
+            </p>
+          </div>
+        </div>
 
         <div className="flex flex-wrap gap-3">
           <button onClick={handleSync} disabled={syncing}
@@ -225,166 +243,24 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {syncError && (
-          <div className="text-sm text-red-600 bg-red-500/10 rounded-xl px-4 py-3">
-            Sync failed: {syncError}
-          </div>
-        )}
 
-        {result && (
-          <div className="space-y-3">
-            <div className="flex gap-4 text-sm">
-              <span className="text-brand-text-muted">
-                Pushed: <strong className="text-brand-text-primary dark:text-white">{totalPushed}</strong>
-              </span>
-              <span className="text-brand-text-muted">
-                Pulled: <strong className="text-brand-text-primary dark:text-white">{totalPulled}</strong>
-              </span>
-              {totalFailed > 0 && (
-                <span className="text-brand-text-muted">
-                  Failed: <strong className="text-red-600">{totalFailed}</strong>
-                </span>
-              )}
-            </div>
-            {result.success
-              ? <p className="text-sm text-green-600">Sync completed successfully.</p>
-              : <p className="text-sm text-amber-600">Sync completed with errors.</p>
-            }
-            <p className="text-xs text-brand-text-muted">
-              Synced at: {new Date(result.syncedAt).toLocaleString()}
-            </p>
-
-            {failedTables.length > 0 && (
-              <div className="space-y-2 mt-2">
-                <p className="text-sm font-medium text-brand-text-primary dark:text-white">Failed tables:</p>
-                {failedTables.map(t => (
-                  <div key={t.table} className="bg-red-500/5 rounded-xl border border-red-500/10 overflow-hidden">
-                    <button
-                      onClick={() => setExpandedFailed(expandedFailed === t.table ? null : t.table)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left"
-                    >
-                      <span className="font-medium text-brand-text-primary dark:text-white">
-                        {formatTableName(t.table)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-red-600">{t.failed === -1 ? 'Error' : `${t.failed} failed`}</span>
-                        {t.failedDetails && t.failedDetails.length > 0 && (
-                          <svg className={`w-4 h-4 text-brand-text-muted transition-transform ${expandedFailed === t.table ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                    {expandedFailed === t.table && t.failedDetails && t.failedDetails.length > 0 && (
-                      <div className="px-4 pb-3 space-y-1">
-                        {t.failedDetails.map((d, i) => (
-                          <div key={i} className="text-xs text-brand-text-muted bg-white/20 dark:bg-white/[0.04] rounded-lg px-3 py-2 break-all">
-                            <span className="font-mono text-red-500">ID: {d.id}</span>
-                            <br />
-                            <span>{d.error}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {t.error && (
-                      <div className="px-4 pb-3">
-                        <div className="text-xs text-red-500 bg-red-500/5 rounded-lg px-3 py-2 break-all">
-                          {t.error}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {pullError && (
-          <div className="text-sm text-red-600 bg-red-500/10 rounded-xl px-4 py-3">
-            Pull failed: {pullError}
-          </div>
-        )}
-
-        {pullResult && (
-          <div className="space-y-3">
-            <div className="flex gap-4 text-sm">
-              <span className="text-brand-text-muted">
-                Pulled: <strong className="text-brand-text-primary dark:text-white">
-                  {pullResult.pullResults.reduce((s, r) => s + (r.pulled ?? 0), 0)}
-                </strong>
-              </span>
-              <span className="text-brand-text-muted">
-                Skipped: <strong className="text-brand-text-primary dark:text-white">
-                  {pullResult.pullResults.reduce((s, r) => s + (r.skipped ?? 0), 0)}
-                </strong>
-              </span>
-              {pullResult.pullResults.some(r => r.failed > 0) && (
-                <span className="text-brand-text-muted">
-                  Failed: <strong className="text-red-600">
-                    {pullResult.pullResults.reduce((s, r) => s + (r.failed > 0 ? r.failed : 0), 0)}
-                  </strong>
-                </span>
-              )}
-            </div>
-            {pullResult.success
-              ? <p className="text-sm text-green-600">Pull completed successfully.</p>
-              : <p className="text-sm text-amber-600">Pull completed with errors.</p>
-            }
-            <p className="text-xs text-brand-text-muted">
-              Synced at: {new Date(pullResult.syncedAt).toLocaleString()}
-            </p>
-
-            {pullResult.pullResults.filter(r => r.failed > 0).length > 0 && (
-              <div className="space-y-2 mt-2">
-                <p className="text-sm font-medium text-brand-text-primary dark:text-white">Failed tables:</p>
-                {pullResult.pullResults.filter(r => r.failed > 0).map(t => (
-                  <div key={t.table} className="bg-red-500/5 rounded-xl border border-red-500/10 overflow-hidden">
-                    <button
-                      onClick={() => setExpandedFailed(expandedFailed === `pull-${t.table}` ? null : `pull-${t.table}`)}
-                      className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-left"
-                    >
-                      <span className="font-medium text-brand-text-primary dark:text-white">
-                        {formatTableName(t.table)}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        <span className="text-red-600">{t.failed === -1 ? 'Error' : `${t.failed} failed`}</span>
-                        {t.failedDetails && t.failedDetails.length > 0 && (
-                          <svg className={`w-4 h-4 text-brand-text-muted transition-transform ${expandedFailed === `pull-${t.table}` ? 'rotate-180' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                            <polyline points="6 9 12 15 18 9" />
-                          </svg>
-                        )}
-                      </div>
-                    </button>
-                    {expandedFailed === `pull-${t.table}` && t.failedDetails && t.failedDetails.length > 0 && (
-                      <div className="px-4 pb-3 space-y-1">
-                        {t.failedDetails.map((d, i) => (
-                          <div key={i} className="text-xs text-brand-text-muted bg-white/20 dark:bg-white/[0.04] rounded-lg px-3 py-2 break-all">
-                            <span className="font-mono text-red-500">ID: {d.id}</span>
-                            <br />
-                            <span>{d.error}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {t.error && (
-                      <div className="px-4 pb-3">
-                        <div className="text-xs text-red-500 bg-red-500/5 rounded-lg px-3 py-2 break-all">
-                          {t.error}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Database</h2>
         <p className="text-sm text-brand-text-muted">Export or restore your local database.</p>
+        
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
+          <div className="text-amber-600 dark:text-amber-400 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Important Sync Rule</h3>
+            <p className="text-xs text-amber-700 dark:text-amber-400/90 mt-1">
+              Always click <strong>Sync Now</strong> (in the section above) before exporting your local database. This guarantees your backup file and the cloud database have identical, up-to-date information.
+            </p>
+          </div>
+        </div>
 
         <div className="flex flex-wrap gap-3">
           <button onClick={handleExport} disabled={exporting}
@@ -414,17 +290,7 @@ export default function SettingsPage() {
           </button>
         </div>
 
-        {exportMsg && (
-          <p className="text-sm text-green-600 bg-green-500/10 rounded-xl px-4 py-3 break-all">
-            {exportMsg}
-          </p>
-        )}
 
-        {importMsg && (
-          <p className="text-sm text-brand-text-primary dark:text-white bg-white/30 dark:bg-white/[0.06] rounded-xl px-4 py-3">
-            {importMsg}
-          </p>
-        )}
       </div>
 
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">

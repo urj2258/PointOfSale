@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import { getDatabase } from '../database.js';
 import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
+import { insertVendorInTx } from './vendorRepository.js';
 
 function syncVendorInvoiceFromLedger(db: Database.Database, invoiceId: string, now: string) {
   const row = db.prepare(`
@@ -26,12 +27,9 @@ function syncVendorInvoiceFromLedger(db: Database.Database, invoiceId: string, n
 export interface VendorLedgerRow {
   id: string
   vendor_id: string
-  product_id: string
   transaction_datetime: string
   description: string | null
   vehicle_number: string | null
-  quantity: number
-  rate_per_unit: number
   total_payment: number
   paid_amount: number
   remaining_balance: number
@@ -62,19 +60,21 @@ export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dat
     params.push(dateTo);
   }
 
-  const countRow = db.prepare(`
-    SELECT COUNT(*) as total FROM vendor_ledger vl ${where}
-  `).get(...params) as { total: number };
+  const countRow = db.prepare(`SELECT COUNT(*) as total FROM vendor_ledger vl ${where}`).get(...params) as { total: number };
 
   const data = db.prepare(`
-    SELECT vl.*, v.name as vendor_name, i.name as product_name
+    SELECT vl.*, v.name as vendor_name,
+           vi.due_date as invoice_due_date,
+           (SELECT group_concat(i.name, ', ') FROM vendor_invoice_items vii JOIN inventory i ON i.id = vii.product_id WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as product_name,
+           (SELECT SUM(quantity) FROM vendor_invoice_items vii WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as quantity,
+           (SELECT AVG(rate_per_unit) FROM vendor_invoice_items vii WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as rate_per_unit
     FROM vendor_ledger vl
     LEFT JOIN vendors v ON v.id = vl.vendor_id
-    LEFT JOIN inventory i ON i.id = vl.product_id
+    LEFT JOIN vendor_invoices vi ON vi.id = vl.vendor_invoice_id
     ${where}
     ORDER BY vl.transaction_datetime DESC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset) as (VendorLedgerRow & { vendor_name: string; product_name: string })[];
+  `).all(...params, limit, offset) as (VendorLedgerRow & { vendor_name: string; product_name: string; quantity: number; rate_per_unit: number; invoice_due_date: string | null })[];
 
   return { data, total: countRow.total, page, limit };
 }
@@ -82,48 +82,127 @@ export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dat
 export function getVendorLedgerById(id: string) {
   const db = getDatabase();
   return db.prepare(`
-    SELECT vl.*, v.name as vendor_name, i.name as product_name
+    SELECT vl.*, v.name as vendor_name,
+           vi.due_date as invoice_due_date,
+           (SELECT group_concat(i.name, ', ') FROM vendor_invoice_items vii JOIN inventory i ON i.id = vii.product_id WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as product_name,
+           (SELECT SUM(quantity) FROM vendor_invoice_items vii WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as quantity,
+           (SELECT AVG(rate_per_unit) FROM vendor_invoice_items vii WHERE vii.vendor_invoice_id = vl.vendor_invoice_id AND vii.deleted_at IS NULL) as rate_per_unit
     FROM vendor_ledger vl
     LEFT JOIN vendors v ON v.id = vl.vendor_id
-    LEFT JOIN inventory i ON i.id = vl.product_id
+    LEFT JOIN vendor_invoices vi ON vi.id = vl.vendor_invoice_id
     WHERE vl.id = ? AND vl.deleted_at IS NULL
-  `).get(id) as (VendorLedgerRow & { vendor_name: string; product_name: string }) | undefined;
+  `).get(id) as (VendorLedgerRow & { vendor_name: string; product_name: string; quantity: number; rate_per_unit: number; invoice_due_date: string | null }) | undefined;
 }
 
 export function createVendorLedgerEntry(
-  vendorId: string, productId: string, transactionDatetime: string,
-  quantity: number, ratePerUnit: number, totalPayment: number,
-  paidAmount: number, description?: string, vehicleNumber?: string
+  vendorId: string, transactionDatetime: string,
+  items: { productId: string; quantity: number; ratePerUnit: number }[],
+  totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string,
+  dueDate?: string
 ) {
   const db = getDatabase();
   const now = new Date().toISOString();
-  const id = crypto.randomUUID();
+  const ledgerId = crypto.randomUUID();
+  const invoiceId = crypto.randomUUID();
   const remainingBalance = totalPayment - paidAmount;
 
-  const insertLedger = db.prepare(`
-    INSERT INTO vendor_ledger (id, vendor_id, product_id, transaction_datetime, description, vehicle_number,
-      quantity, rate_per_unit, total_payment, paid_amount, remaining_balance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const updateStock = db.prepare(`
-    UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?
-  `);
-
   const transaction = db.transaction(() => {
-    insertLedger.run(id, vendorId, productId, transactionDatetime, description ?? null, vehicleNumber ?? null,
-      quantity, ratePerUnit, totalPayment, paidAmount, remainingBalance, now, now);
-    updateStock.run(quantity, now, productId);
+    // 1. Create vendor_invoice
+    const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+    const invoiceNumber = `INV-${Date.now()}`;
+    const resolvedDueDate = dueDate || transactionDatetime.split('T')[0];
+    db.prepare(`
+      INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(invoiceId, vendorId, invoiceNumber, transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, paidAmount, invoiceTotal - paidAmount, (invoiceTotal - paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
+
+    // 2. Insert items and update stock
+    for (const item of items) {
+      const itemId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+
+      db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(item.quantity, now, item.productId);
+    }
+
+    // 3. Create vendor_ledger
+    db.prepare(`
+      INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, created_at, updated_at, vendor_invoice_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, vendorId, transactionDatetime, description ?? null, vehicleNumber ?? null,
+      totalPayment, paidAmount, remainingBalance, now, now, invoiceId);
   });
 
   transaction();
-  return getVendorLedgerById(id);
+  return getVendorLedgerById(ledgerId);
+}
+
+/**
+ * Atomically creates a new vendor row and a vendor_ledger entry in one SQLite transaction.
+ * If either insert fails the whole operation rolls back — no orphan vendors.
+ */
+export function createVendorWithPurchase(
+  vendor: { name: string; phone: string; address: string; mill_name?: string },
+  purchase: {
+    items: { productId: string; quantity: number; ratePerUnit: number }[];
+    transactionDatetime: string; totalPayment: number; paidAmount: number;
+    description?: string; vehicleNumber?: string; dueDate?: string;
+  }
+) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const vendorId = crypto.randomUUID();
+  const ledgerId = crypto.randomUUID();
+  const invoiceId = crypto.randomUUID();
+  const remainingBalance = purchase.totalPayment - purchase.paidAmount;
+
+  const transaction = db.transaction(() => {
+    // 1. Insert the new vendor
+    insertVendorInTx(db, vendorId, now, vendor.name, vendor.phone, vendor.address, vendor.mill_name);
+
+    // 2. Create vendor_invoice
+    const invoiceTotal = purchase.items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+    const invoiceNumber = `INV-${Date.now()}`;
+    const resolvedDueDate = purchase.dueDate || purchase.transactionDatetime.split('T')[0];
+    db.prepare(`
+      INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(invoiceId, vendorId, invoiceNumber, purchase.transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, purchase.paidAmount, invoiceTotal - purchase.paidAmount, (invoiceTotal - purchase.paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
+
+    // 3. Insert items and update stock
+    for (const item of purchase.items) {
+      const itemId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+
+      db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(item.quantity, now, item.productId);
+    }
+
+    // 4. Create vendor_ledger
+    db.prepare(`
+      INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, created_at, updated_at, vendor_invoice_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, vendorId, purchase.transactionDatetime, purchase.description ?? null, purchase.vehicleNumber ?? null,
+      purchase.totalPayment, purchase.paidAmount, remainingBalance, now, now, invoiceId);
+  });
+
+  transaction();
+  return getVendorLedgerById(ledgerId);
 }
 
 export function updateVendorLedgerEntry(
-  id: string, vendorId: string, productId: string, transactionDatetime: string,
-  quantity: number, ratePerUnit: number, totalPayment: number,
-  paidAmount: number, description?: string, vehicleNumber?: string
+  id: string, vendorId: string, transactionDatetime: string,
+  items: { productId: string; quantity: number; ratePerUnit: number }[],
+  totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string,
+  dueDate?: string
 ) {
   const db = getDatabase();
   const existing = getVendorLedgerById(id);
@@ -135,10 +214,7 @@ export function updateVendorLedgerEntry(
 
     updateRow(db, 'vendor_ledger', id, {
       vendor_id: vendorId,
-      product_id: productId,
       transaction_datetime: transactionDatetime,
-      quantity,
-      rate_per_unit: ratePerUnit,
       total_payment: totalPayment,
       paid_amount: paidAmount,
       remaining_balance: remainingBalance,
@@ -146,18 +222,44 @@ export function updateVendorLedgerEntry(
       vehicle_number: vehicleNumber ?? null,
     });
 
-    const oldQty = existing.quantity;
-    const oldProductId = existing.product_id;
-    const qtyDiff = quantity - oldQty;
-
-    if (oldProductId !== productId) {
-      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(oldQty, now, oldProductId);
-      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(quantity, now, productId);
-    } else if (qtyDiff !== 0) {
-      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(qtyDiff, now, productId);
-    }
-
     if (existing.vendor_invoice_id) {
+      // 1. Load old items so we can revert their inventory contribution
+      const oldItems = db.prepare(
+        `SELECT product_id, quantity FROM vendor_invoice_items WHERE vendor_invoice_id = ? AND deleted_at IS NULL`
+      ).all(existing.vendor_invoice_id) as { product_id: string; quantity: number }[];
+
+      // 2. Revert old stock (vendor purchases ADD stock, so revert = SUBTRACT)
+      for (const old of oldItems) {
+        db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
+          .run(old.quantity, now, old.product_id);
+      }
+
+      // 3. Soft-delete ALL existing items for this invoice
+      db.prepare(
+        'UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL'
+      ).run(now, now, existing.vendor_invoice_id);
+
+      // 4. Insert fresh items and add new stock
+      for (const item of items) {
+        const itemId = crypto.randomUUID();
+        db.prepare(
+          `INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(itemId, existing.vendor_invoice_id, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+        db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
+          .run(item.quantity, now, item.productId);
+      }
+
+      // 5. Update invoice header totals, issue date, due date
+      const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+      const issueDate = transactionDatetime.split('T')[0];
+      const resolvedDueDate = dueDate !== undefined ? (dueDate || issueDate) : issueDate;
+      updateRow(db, 'vendor_invoices', existing.vendor_invoice_id, {
+        total: invoiceTotal,
+        subtotal: invoiceTotal,
+        issue_date: issueDate,
+        due_date: resolvedDueDate,
+      });
+
       syncVendorInvoiceFromLedger(db, existing.vendor_invoice_id, now);
     }
   });
@@ -174,17 +276,18 @@ export function softDeleteVendorLedgerEntry(id: string) {
   const transaction = db.transaction(() => {
     const now = new Date().toISOString();
 
-    // Cascade: soft-delete linked invoice + items
+    // Cascade: soft-delete linked invoice + items, and reverse inventory
     if (entry.vendor_invoice_id) {
+      const items = db.prepare(`SELECT product_id, quantity FROM vendor_invoice_items WHERE vendor_invoice_id = ? AND deleted_at IS NULL`).all(entry.vendor_invoice_id) as { product_id: string; quantity: number }[];
+      for (const item of items) {
+        db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(item.quantity, now, item.product_id);
+      }
+
       db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL')
         .run(now, now, entry.vendor_invoice_id);
       db.prepare('UPDATE vendor_invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL')
         .run(now, now, entry.vendor_invoice_id);
     }
-
-    // Reverse inventory
-    db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
-      .run(entry.quantity, now, entry.product_id);
 
     // Soft-delete the ledger entry itself (last)
     softDeleteRow(db, 'vendor_ledger', id);

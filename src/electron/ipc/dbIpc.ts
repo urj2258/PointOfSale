@@ -2,6 +2,11 @@ import { ipcMain, dialog, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { getDbPath, getDatabase, closeDatabase, initDatabase } from '../database.js';
+import { clearSyncMeta } from '../sync/syncEngine.js';
+import { createAuditLog } from '../repositories/auditLogRepository.js';
+import { getOwner } from '../repositories/authRepository.js';
+
+let lastExportLogTime = 0;
 
 export function registerDbIpc() {
   ipcMain.handle('db:export', async (_e, destDir?: string) => {
@@ -10,21 +15,31 @@ export function registerDbIpc() {
       if (!fs.existsSync(srcPath)) return { success: false, error: 'Database file not found' };
 
       const dir = destDir || app.getPath('desktop');
-      const destPath = path.join(dir, `pos-backup.db`);
-
-      // Clean up any old timestamped backup files (pos-backup-*.db)
-      try {
-        const files = fs.readdirSync(dir);
-        for (const file of files) {
-          if (/^pos-backup-.+\.db$/.test(file)) {
-            fs.unlinkSync(path.join(dir, file));
-          }
-        }
-      } catch { /* ignore cleanup errors */ }
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const hours = now.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      const h12 = hours % 12 || 12;
+      const timestamp = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${now.getFullYear()}-${pad(h12)}-${pad(now.getMinutes())}-${pad(now.getSeconds())}-${ampm}`;
+      const destPath = path.join(dir, `pos-backup-${timestamp}.db`);
 
       fs.copyFileSync(srcPath, destPath);
+
+      try {
+        const user = getOwner();
+        const currentMs = Date.now();
+        if (user && (currentMs - lastExportLogTime > 60000)) {
+          createAuditLog('export', 'success', user.id, user.full_name, `Exported to: ${destPath}`);
+          lastExportLogTime = currentMs;
+        }
+      } catch { /* ignore audit errors */ }
+
       return { success: true, path: destPath };
     } catch (err) {
+      try {
+        const user = getOwner();
+        if (user) createAuditLog('export', 'failure', user.id, user.full_name, String(err));
+      } catch { /* ignore audit errors */ }
       return { success: false, error: String(err) };
     }
   });
@@ -64,9 +79,21 @@ export function registerDbIpc() {
       for (const table of tables) {
         db.prepare(`UPDATE ${table} SET synced = 0`).run();
       }
+      
+      // Wipe the sync tracker file so the system doesn't assume it is already up to date
+      clearSyncMeta();
+
+      try {
+        const user = getOwner();
+        if (user) createAuditLog('import', 'success', user.id, user.full_name, `Imported from: ${srcPath}`);
+      } catch { /* ignore audit errors */ }
 
       return { success: true, path: srcPath };
     } catch (err) {
+      try {
+        const user = getOwner();
+        if (user) createAuditLog('import', 'failure', user.id, user.full_name, String(err));
+      } catch { /* ignore audit errors */ }
       return { success: false, error: String(err) };
     }
   });

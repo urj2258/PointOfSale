@@ -47,6 +47,46 @@ const toISODatetime = (dt: string) => {
   return `${yyyy}-${mm}-${dd}T${timePart || '00:00'}`
 }
 
+// ── New-customer inline validation (mirrors CustomersPage.tsx exactly) ──────
+type NewCustomerForm = { name: string; phone: string; address: string; shop_name: string }
+type NewCustomerErrors = { name?: string; phone?: string; address?: string; shop_name?: string }
+
+function validateNewCustomerField(field: keyof NewCustomerForm, value: string): string | undefined {
+  const v = value.trim()
+  switch (field) {
+    case 'name': {
+      if (!v) return 'Name is required.'
+      if (v.length < 3 || v.length > 100) return 'Name must be 3-100 characters.'
+      if (/^\d+$/.test(v)) return 'Name cannot be purely numbers.'
+      if (/^[^a-zA-Z0-9]+$/.test(v)) return 'Name must contain at least one letter or digit.'
+      return undefined
+    }
+    case 'phone': {
+      if (!v) return 'Phone is required.'
+      if (/[^0-9+\-\s()]/.test(v)) return 'Phone must not contain letters.'
+      const digits = v.replace(/[^0-9]/g, '')
+      const ok =
+        /^03\d{9}$/.test(digits) || /^923\d{9}$/.test(digits) ||
+        /^3\d{9}$/.test(digits) || /^0[24-9]\d{8,9}$/.test(digits) ||
+        /^92[24-9]\d{8,9}$/.test(digits)
+      if (!ok) return 'Enter a valid Pakistani phone number (e.g. 03XXXXXXXXX).'
+      return undefined
+    }
+    case 'address': {
+      if (!v) return 'Address is required.'
+      if (v.length < 5 || v.length > 250) return 'Address must be 5-250 characters.'
+      if (/^\d+$/.test(v)) return 'Address cannot be purely numbers.'
+      if (/^[^a-zA-Z0-9]+$/.test(v)) return 'Address must contain at least one letter or digit.'
+      return undefined
+    }
+    case 'shop_name': {
+      if (!v) return undefined
+      if (v.length < 3 || v.length > 100) return 'Shop name must be 3-100 characters.'
+      return undefined
+    }
+  }
+}
+
 export default function CustomerLedgerPage() {
   const [data, setData] = useState<PaginatedResult<CustomerLedgerEntry> | null>(null)
   const [customers, setCustomers] = useState<Customer[]>([])
@@ -60,15 +100,20 @@ export default function CustomerLedgerPage() {
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
 
+  const [customerMode, setCustomerMode] = useState<'existing' | 'new'>('existing')
+  const [newCustomerForm, setNewCustomerForm] = useState<NewCustomerForm>({ name: '', phone: '', address: '', shop_name: '' })
+  const [newCustomerErrors, setNewCustomerErrors] = useState<NewCustomerErrors>({})
+  const [newCustomerTouched, setNewCustomerTouched] = useState<Record<string, boolean>>({})
+
   const [form, setForm] = useState({
-    customer_id: '', product_id: '', transaction_datetime: '',
-    quantity: '', rate_per_unit: '', total_payment: '',
-    paid_amount: '', description: '', vehicle_number: '',
+    customer_id: '', transaction_datetime: '', total_payment: '',
+    paid_amount: '', description: '', vehicle_number: '', due_date: ''
   })
+  const [items, setItems] = useState<{ productId: string; quantity: string; ratePerUnit: string }[]>([
+    { productId: '', quantity: '', ratePerUnit: '' }
+  ])
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
-
-
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -88,46 +133,138 @@ export default function CustomerLedgerPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ customer_id: '', product_id: '', transaction_datetime: localNow(), quantity: '', rate_per_unit: '', total_payment: '', paid_amount: '', description: '', vehicle_number: '' })
+    setCustomerMode('existing')
+    setNewCustomerForm({ name: '', phone: '', address: '', shop_name: '' })
+    setNewCustomerErrors({})
+    setNewCustomerTouched({})
+    setForm({ customer_id: '', transaction_datetime: localNow(), total_payment: '', paid_amount: '', description: '', vehicle_number: '', due_date: '' })
+    setItems([{ productId: '', quantity: '', ratePerUnit: '' }])
     setError('')
     setModalOpen(true)
   }
 
-  const openEdit = (entry: CustomerLedgerEntry) => {
+  const openEdit = async (entry: CustomerLedgerEntry) => {
     setEditing(entry)
+    setCustomerMode('existing')
+    setNewCustomerForm({ name: '', phone: '', address: '', shop_name: '' })
+    setNewCustomerErrors({})
+    setNewCustomerTouched({})
+    
+    let loadedItems = [{ productId: '', quantity: '', ratePerUnit: '' }]
+    let invoiceDueDate = ''
+    if (entry.invoice_id) {
+      try {
+        const inv = await api.invoices.getWithItems(entry.invoice_id)
+        if (inv) {
+          invoiceDueDate = fmtDate(inv.due_date)
+          if (inv.items && inv.items.length > 0) {
+            loadedItems = inv.items.map((i: any) => ({
+              productId: i.product_id,
+              quantity: String(i.quantity),
+              ratePerUnit: String(i.rate_per_unit)
+            }))
+          }
+        }
+      } catch (err) {
+        console.error('Failed to load invoice items', err)
+      }
+    }
+
     setForm({
-      customer_id: entry.customer_id, product_id: entry.product_id,
+      customer_id: entry.customer_id,
       transaction_datetime: fmtDatetime(entry.transaction_datetime.slice(0, 16)),
-      quantity: String(entry.quantity), rate_per_unit: String(entry.rate_per_unit),
       total_payment: String(entry.total_payment), paid_amount: String(entry.paid_amount),
       description: entry.description || '', vehicle_number: entry.vehicle_number || '',
+      due_date: invoiceDueDate
     })
+    setItems(loadedItems)
     setError('')
     setModalOpen(true)
   }
 
+  const addItemRow = () => setItems([...items, { productId: '', quantity: '', ratePerUnit: '' }])
+  const removeItemRow = (index: number) => setItems(items.filter((_, i) => i !== index))
+  const updateItemRow = (index: number, field: string, value: string) => {
+    const newItems = [...items]
+    newItems[index] = { ...newItems[index], [field]: value }
+    setItems(newItems)
+  }
+
+  const grandTotal = items.reduce((sum, it) => {
+    const q = Number(it.quantity) || 0
+    const r = Number(it.ratePerUnit) || 0
+    return sum + (q * r)
+  }, 0)
+
+  useEffect(() => {
+    if (!editing) {
+      setForm(prev => ({ ...prev, total_payment: grandTotal > 0 ? String(grandTotal) : '' }))
+    }
+  }, [grandTotal, editing])
+
   const handleSubmit = async () => {
-    if (!form.customer_id || !form.product_id || !form.transaction_datetime) { setError('Fill required fields'); return }
-    if (Number(form.quantity) <= 0 || Number(form.rate_per_unit) <= 0) { setError('Quantity and rate must be positive'); return }
+    if (customerMode === 'new' && !editing) {
+      const ncErrors: NewCustomerErrors = {}
+      for (const f of ['name', 'phone', 'address', 'shop_name'] as const) {
+        const err = validateNewCustomerField(f, newCustomerForm[f])
+        if (err) ncErrors[f] = err
+      }
+      setNewCustomerTouched({ name: true, phone: true, address: true, shop_name: true })
+      setNewCustomerErrors(ncErrors)
+      if (Object.keys(ncErrors).length > 0) { toast.error('Please fix customer field errors.'); return }
+    }
+    if (customerMode === 'existing' && !form.customer_id) { setError('Please select a customer'); return }
+    if (!form.transaction_datetime) { setError('Date & Time is required'); return }
+    
+    const validItems = items.filter(it => it.productId && Number(it.quantity) > 0 && Number(it.ratePerUnit) > 0)
+    if (validItems.length === 0) { setError('At least one valid item row is required'); return }
+    
     if (Number(form.paid_amount) > Number(form.total_payment)) { setError('Paid amount cannot exceed total payment'); return }
+    
     setError('')
     const isoDt = toISODatetime(form.transaction_datetime)
+    const isoDueDate = toISO(form.due_date)
+    
+    if (isoDueDate && isoDt && isoDueDate < isoDt.split('T')[0]) {
+      setError('Due date cannot be earlier than the transaction date')
+      return
+    }
+    
+    const mappedItems = validItems.map(it => ({
+      productId: it.productId,
+      quantity: Number(it.quantity),
+      ratePerUnit: Number(it.ratePerUnit)
+    }))
+
     try {
       if (editing) {
-        await api.customerLedger.update(editing.id,
-          form.customer_id, form.product_id, isoDt,
-          Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
-          form.description || undefined, form.vehicle_number || undefined)
+        await api.customerLedger.updateMultiItem(editing.id, form.customer_id, {
+          items: mappedItems,
+          transactionDatetime: isoDt,
+          totalPayment: Number(form.total_payment),
+          paidAmount: Number(form.paid_amount),
+          description: form.description || undefined,
+          vehicleNumber: form.vehicle_number || undefined,
+          dueDate: isoDueDate || undefined
+        })
+      } else if (customerMode === 'new') {
+        const result = await api.customerLedger.createMultiItem(
+          { name: newCustomerForm.name, phone: newCustomerForm.phone, address: newCustomerForm.address, shop_name: newCustomerForm.shop_name || undefined },
+          { items: mappedItems, transactionDatetime: isoDt, totalPayment: Number(form.total_payment), paidAmount: Number(form.paid_amount), description: form.description || undefined, vehicleNumber: form.vehicle_number || undefined, dueDate: isoDueDate || undefined }
+        )
+        if ((result as any)?.error) { toast.error((result as any).error); return }
+        api.customers.list(undefined, 1, 1000).then((r: PaginatedResult<Customer>) => setCustomers(r.data))
       } else {
-        await api.customerLedger.create(form.customer_id, form.product_id, isoDt,
-          Number(form.quantity), Number(form.rate_per_unit), Number(form.total_payment), Number(form.paid_amount),
-          form.description || undefined, form.vehicle_number || undefined)
+        await api.customerLedger.createMultiItem(
+          { id: form.customer_id, name: '', phone: '', address: '' },
+          { items: mappedItems, transactionDatetime: isoDt, totalPayment: Number(form.total_payment), paidAmount: Number(form.paid_amount), description: form.description || undefined, vehicleNumber: form.vehicle_number || undefined, dueDate: isoDueDate || undefined }
+        )
       }
       setModalOpen(false)
       load()
-      toast.success(editing ? 'Sale entry updated successfully' : 'Sale entry created successfully')
+      toast.success(editing ? 'Sale updated successfully' : 'Sale created successfully')
     } catch {
-      toast.error('Failed to save sale entry')
+      toast.error('Failed to save sale')
     }
   }
 
@@ -140,15 +277,15 @@ export default function CustomerLedgerPage() {
   const columns = [
     { key: 'transaction_datetime', label: 'Date', render: (e: CustomerLedgerEntry) => new Date(e.transaction_datetime).toLocaleDateString() },
     { key: 'customer_name', label: 'Customer' },
-    { key: 'product_name', label: 'Product' },
+    { key: 'product_name', label: 'Product(s)' },
     { key: 'description', label: 'Desc' },
     { key: 'vehicle_number', label: 'Vehicle' },
-    { key: 'quantity', label: 'Qty' },
-    { key: 'rate_per_unit', label: 'Rate', render: (e: CustomerLedgerEntry) => `Rs. ${e.rate_per_unit}` },
+    { key: 'quantity', label: 'Total Qty' },
+    { key: 'rate_per_unit', label: 'Avg Rate', render: (e: CustomerLedgerEntry) => `Rs. ${e.rate_per_unit?.toFixed(2) || '0'}` },
     { key: 'total_payment', label: 'Total', render: (e: CustomerLedgerEntry) => `Rs. ${e.total_payment.toLocaleString()}` },
     { key: 'paid_amount', label: 'Paid', render: (e: CustomerLedgerEntry) => `Rs. ${e.paid_amount.toLocaleString()}` },
     {
-      key: 'remaining_balance', label: 'Balance',
+      key: 'remaining_balance', label: 'Remaining Balance',
       render: (e: CustomerLedgerEntry) => (
         <span className={e.remaining_balance > 0 ? 'text-green-600' : e.remaining_balance < 0 ? 'text-red-600' : 'text-gray-500'}>
           Rs. {e.remaining_balance.toLocaleString()}
@@ -199,48 +336,125 @@ export default function CustomerLedgerPage() {
       </div>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Sale' : 'New Sale'}>
-        <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+        <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-2">
           {error && <p className="text-sm text-red-500">{error}</p>}
+
           <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Customer *</label>
-            <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
-              <option value="">Select Customer</option>
-              {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-sm font-medium text-brand-text-primary dark:text-white">Customer *</label>
+              {!editing && (
+                <button type="button" onClick={() => {
+                  setCustomerMode(m => m === 'existing' ? 'new' : 'existing')
+                  setNewCustomerErrors({})
+                  setNewCustomerTouched({})
+                  setNewCustomerForm({ name: '', phone: '', address: '', shop_name: '' })
+                }} className="text-xs font-medium text-gray-900 dark:text-white hover:underline">
+                  {customerMode === 'existing' ? '+ Add New Customer' : '← Existing Customer'}
+                </button>
+              )}
+            </div>
+            {customerMode === 'existing' || editing ? (
+              <select value={form.customer_id} onChange={(e) => setForm({ ...form, customer_id: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                <option value="">Select Customer</option>
+                {customers.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ) : (
+              <div className="space-y-3 p-3 bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/30 rounded-xl">
+                <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">New customer details — will be saved when you submit</p>
+                {(['name', 'phone', 'address', 'shop_name'] as const).map(field => (
+                  <div key={field}>
+                    <input
+                      type={field === 'phone' ? 'tel' : 'text'}
+                      value={newCustomerForm[field]}
+                      placeholder={field === 'name' ? 'Customer Name *' : field === 'phone' ? 'Phone Number *' : field === 'address' ? 'Address *' : 'Shop Name (optional)'}
+                      inputMode={field === 'phone' ? 'numeric' : undefined}
+                      onChange={e => {
+                        const val = e.target.value
+                        setNewCustomerForm(prev => ({ ...prev, [field]: val }))
+                        if (newCustomerTouched[field]) setNewCustomerErrors(prev => ({ ...prev, [field]: validateNewCustomerField(field, val) ?? '' }))
+                      }}
+                      onBlur={() => {
+                        setNewCustomerTouched(prev => ({ ...prev, [field]: true }))
+                        setNewCustomerErrors(prev => ({ ...prev, [field]: validateNewCustomerField(field, newCustomerForm[field]) ?? '' }))
+                      }}
+                      className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40"
+                    />
+                    {newCustomerTouched[field] && newCustomerErrors[field] && <p className="text-xs text-red-500 mt-1">{newCustomerErrors[field]}</p>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Product *</label>
-            <select value={form.product_id} onChange={(e) => setForm({ ...form, product_id: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
-              <option value="">Select Product</option>
-              {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Date & Time *</label>
-            <DateTimeInput value={form.transaction_datetime} onChange={(v) => setForm({ ...form, transaction_datetime: v })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Quantity *</label>
-              <input type="number" value={form.quantity} placeholder="0" onChange={(e) => { const q = e.target.value; const t = Number(q) * Number(form.rate_per_unit); setForm({ ...form, quantity: q, total_payment: t > 0 ? String(t) : '' }) }} onFocus={(e) => e.target.select()}
+              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Date & Time *</label>
+              <DateTimeInput value={form.transaction_datetime} onChange={(v) => setForm({ ...form, transaction_datetime: v })}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Rate/Unit *</label>
-              <input type="number" value={form.rate_per_unit} placeholder="0" onChange={(e) => { const r = e.target.value; const t = Number(form.quantity) * Number(r); setForm({ ...form, rate_per_unit: r, total_payment: t > 0 ? String(t) : '' }) }} onFocus={(e) => e.target.select()}
+              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Due Date</label>
+              <DateInput value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             </div>
           </div>
-          {Number(form.quantity) > 0 && Number(form.rate_per_unit) > 0 && (
-            <p className="text-sm text-brand-text-muted">Computed total: <strong>Rs. {(Number(form.quantity) * Number(form.rate_per_unit)).toLocaleString()}</strong></p>
-          )}
+
+          <div className="space-y-4 bg-gray-50/50 dark:bg-white/[0.02] p-4 rounded-xl border border-gray-100 dark:border-white/[0.05]">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="text-sm font-semibold text-brand-text-primary dark:text-white">Sale Items</h3>
+              <button type="button" onClick={addItemRow} className="text-xs font-medium text-gray-900 dark:text-white hover:underline">
+                + Add Item
+              </button>
+            </div>
+            
+            {items.map((item, idx) => (
+              <div key={idx} className="relative grid grid-cols-12 gap-3 items-end bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                {items.length > 1 && (
+                  <button type="button" onClick={() => removeItemRow(idx)} className="absolute -top-2 -right-2 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200">
+                    ×
+                  </button>
+                )}
+                <div className="col-span-5">
+                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Product *</label>
+                  <select value={item.productId} onChange={(e) => updateItemRow(idx, 'productId', e.target.value)}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white">
+                    <option value="">Select Product</option>
+                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-3">
+                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Qty *</label>
+                  <input type="number" value={item.quantity} placeholder="0" 
+                    onChange={(e) => updateItemRow(idx, 'quantity', e.target.value)} 
+                    onFocus={(e) => e.target.select()}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white" />
+                </div>
+                <div className="col-span-4">
+                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Rate *</label>
+                  <input type="number" value={item.ratePerUnit} placeholder="0" 
+                    onChange={(e) => updateItemRow(idx, 'ratePerUnit', e.target.value)} 
+                    onFocus={(e) => e.target.select()}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white" />
+                </div>
+                {Number(item.quantity) > 0 && Number(item.ratePerUnit) > 0 && (
+                  <div className="col-span-12 text-right">
+                    <p className="text-xs text-brand-text-muted">Line Total: <strong>Rs. {(Number(item.quantity) * Number(item.ratePerUnit)).toLocaleString()}</strong></p>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div className="flex justify-end pt-2 border-t border-gray-200 dark:border-white/[0.1]">
+              <p className="text-sm font-semibold text-brand-text-primary dark:text-white">
+                Grand Total: Rs. {grandTotal.toLocaleString()}
+              </p>
+            </div>
+          </div>
+
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Total Payment *</label>
-              <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onFocus={(e) => e.target.select()}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+            <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onFocus={(e) => e.target.select()}
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Paid Amount *</label>
@@ -250,16 +464,20 @@ export default function CustomerLedgerPage() {
           {remainingBalance >= 0 && (
             <p className="text-sm text-brand-text-muted">Remaining balance: <strong className={remainingBalance === 0 ? 'text-green-600' : 'text-orange-600'}>Rs. {remainingBalance.toLocaleString()}</strong></p>
           )}
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Vehicle Number</label>
-            <input type="text" value={form.vehicle_number} onChange={(e) => setForm({ ...form, vehicle_number: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Vehicle Number</label>
+              <input type="text" value={form.vehicle_number} onChange={(e) => setForm({ ...form, vehicle_number: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description</label>
+              <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description</label>
-            <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-          </div>
+          
           <div className="flex justify-end gap-3 pt-2">
             <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
             <button onClick={handleSubmit} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90">Save</button>

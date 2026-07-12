@@ -69,6 +69,7 @@ export const SYNC_TABLE_ORDER: string[] = [
   'vendor_invoice_items',
   'customer_ledger',
   'invoice_items',
+  'audit_logs',
 ];
 
 function createTables(db: Database.Database): void {
@@ -112,12 +113,9 @@ function createTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS vendor_ledger (
       id TEXT PRIMARY KEY,
       vendor_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
       transaction_datetime TEXT NOT NULL,
       description TEXT,
       vehicle_number TEXT,
-      quantity REAL NOT NULL CHECK (quantity > 0),
-      rate_per_unit REAL NOT NULL CHECK (rate_per_unit > 0),
       total_payment REAL NOT NULL CHECK (total_payment >= 0),
       paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
       remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
@@ -127,7 +125,6 @@ function createTables(db: Database.Database): void {
       synced INTEGER NOT NULL DEFAULT 0,
       vendor_invoice_id TEXT DEFAULT NULL,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
-      FOREIGN KEY (product_id) REFERENCES inventory(id),
       FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
     );
 
@@ -170,12 +167,9 @@ function createTables(db: Database.Database): void {
     CREATE TABLE IF NOT EXISTS customer_ledger (
       id TEXT PRIMARY KEY,
       customer_id TEXT NOT NULL,
-      product_id TEXT NOT NULL,
       transaction_datetime TEXT NOT NULL,
       description TEXT,
       vehicle_number TEXT,
-      quantity REAL NOT NULL CHECK (quantity > 0),
-      rate_per_unit REAL NOT NULL CHECK (rate_per_unit > 0),
       total_payment REAL NOT NULL CHECK (total_payment >= 0),
       paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
       remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
@@ -185,7 +179,6 @@ function createTables(db: Database.Database): void {
       synced INTEGER NOT NULL DEFAULT 0,
       invoice_id TEXT DEFAULT NULL,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
-      FOREIGN KEY (product_id) REFERENCES inventory(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
 
@@ -270,6 +263,20 @@ function createTables(db: Database.Database): void {
       deleted_at TEXT NULL,
       synced INTEGER NOT NULL DEFAULT 0
     );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id TEXT PRIMARY KEY,
+      action TEXT NOT NULL CHECK (action IN ('sync', 'pull', 'export', 'import')),
+      status TEXT NOT NULL CHECK (status IN ('success', 'failure', 'partial')),
+      user_id TEXT NOT NULL,
+      user_name TEXT NOT NULL,
+      details TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
   `);
 }
 
@@ -311,14 +318,151 @@ function migrateSchema(db: Database.Database): void {
     db.exec('ALTER TABLE expenses RENAME COLUMN sycned TO synced');
   }
 
+  // Ensure invoice tables exist for existing users before migrating vendor_ledger
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS vendor_invoices (
+      id TEXT PRIMARY KEY,
+      vendor_id TEXT NOT NULL,
+      invoice_number TEXT NOT NULL,
+      issue_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      subtotal REAL NOT NULL DEFAULT 0,
+      tax_amount REAL NOT NULL DEFAULT 0,
+      discount_amount REAL NOT NULL DEFAULT 0,
+      total REAL NOT NULL CHECK (total >= 0),
+      paid_amount REAL NOT NULL DEFAULT 0 CHECK (paid_amount >= 0),
+      remaining_balance REAL NOT NULL DEFAULT 0 CHECK (remaining_balance >= 0),
+      status TEXT NOT NULL DEFAULT 'Pending' CHECK (status IN ('Pending', 'Paid', 'Overdue', 'Cancelled')),
+      notes TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (vendor_id) REFERENCES vendors(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS vendor_invoice_items (
+      id TEXT PRIMARY KEY,
+      vendor_invoice_id TEXT NOT NULL,
+      product_id TEXT NOT NULL,
+      quantity REAL NOT NULL CHECK (quantity > 0),
+      rate_per_unit REAL NOT NULL CHECK (rate_per_unit > 0),
+      total REAL NOT NULL CHECK (total >= 0),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      deleted_at TEXT NULL,
+      synced INTEGER NOT NULL DEFAULT 0,
+      FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id),
+      FOREIGN KEY (product_id) REFERENCES inventory(id)
+    );
+  `);
+
   const vlCols = tableCols('vendor_ledger');
   if (!vlCols.includes('vendor_invoice_id')) {
     addColumn('vendor_ledger', 'vendor_invoice_id TEXT DEFAULT NULL');
+  }
+  if (vlCols.includes('product_id')) {
+    // Migration: remove product_id, quantity, rate_per_unit
+    db.transaction(() => {
+      // 1. Create new table without those columns
+      db.exec(`
+        CREATE TABLE vendor_ledger_new (
+          id TEXT PRIMARY KEY,
+          vendor_id TEXT NOT NULL,
+          transaction_datetime TEXT NOT NULL,
+          description TEXT,
+          vehicle_number TEXT,
+          total_payment REAL NOT NULL CHECK (total_payment >= 0),
+          paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
+          remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT NULL,
+          synced INTEGER NOT NULL DEFAULT 0,
+          vendor_invoice_id TEXT DEFAULT NULL,
+          FOREIGN KEY (vendor_id) REFERENCES vendors(id),
+          FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
+        )
+      `);
+      // 2. Copy data
+      db.exec(`
+        INSERT INTO vendor_ledger_new (
+          id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          deleted_at, synced, vendor_invoice_id
+        )
+        SELECT 
+          id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          deleted_at, synced, vendor_invoice_id
+        FROM vendor_ledger
+      `);
+      // 3. Drop old table
+      db.exec('DROP TABLE vendor_ledger');
+      // 4. Rename new table
+      db.exec('ALTER TABLE vendor_ledger_new RENAME TO vendor_ledger');
+    })();
   }
 
   const clCols = tableCols('customer_ledger');
   if (!clCols.includes('invoice_id')) {
     addColumn('customer_ledger', 'invoice_id TEXT DEFAULT NULL');
+  }
+  if (clCols.includes('product_id')) {
+    // Migration: remove product_id, quantity, rate_per_unit
+    db.transaction(() => {
+      // 1. Create new table without those columns
+      db.exec(`
+        CREATE TABLE customer_ledger_new (
+          id TEXT PRIMARY KEY,
+          customer_id TEXT NOT NULL,
+          transaction_datetime TEXT NOT NULL,
+          description TEXT,
+          vehicle_number TEXT,
+          total_payment REAL NOT NULL CHECK (total_payment >= 0),
+          paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
+          remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT NULL,
+          synced INTEGER NOT NULL DEFAULT 0,
+          invoice_id TEXT DEFAULT NULL,
+          FOREIGN KEY (customer_id) REFERENCES customers(id),
+          FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+        )
+      `);
+      // 2. Copy data
+      db.exec(`
+        INSERT INTO customer_ledger_new (
+          id, customer_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          deleted_at, synced, invoice_id
+        )
+        SELECT 
+          id, customer_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          deleted_at, synced, invoice_id
+        FROM customer_ledger
+      `);
+      // 3. Drop old table
+      db.exec('DROP TABLE customer_ledger');
+      // 4. Rename new table
+      db.exec('ALTER TABLE customer_ledger_new RENAME TO customer_ledger');
+    })();
+  }
+
+  const alCols = tableCols('audit_logs');
+  if (alCols.length > 0) {
+    if (!alCols.includes('updated_at')) {
+      addColumn('audit_logs', "updated_at TEXT NOT NULL DEFAULT ''");
+      db.exec(`UPDATE audit_logs SET updated_at = created_at WHERE updated_at = ''`);
+    }
+    if (!alCols.includes('deleted_at')) {
+      addColumn('audit_logs', 'deleted_at TEXT NULL');
+    }
+    if (!alCols.includes('synced')) {
+      addColumn('audit_logs', 'synced INTEGER NOT NULL DEFAULT 0');
+    }
   }
 }
 
@@ -328,7 +472,7 @@ function createIndexes(db: Database.Database): void {
     'vendor_ledger', 'vendor_invoices', 'vendor_invoice_items',
     'customer_ledger', 'invoices', 'invoice_items',
     'expense_categories', 'expenses',
-    'day_closing_reports', 'users',
+    'day_closing_reports', 'users', 'audit_logs'
   ];
   for (const table of syncedTables) {
     db.exec(`CREATE INDEX IF NOT EXISTS idx_${table}_synced ON ${table}(synced)`);
@@ -340,7 +484,6 @@ function createIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_inventory_deleted_at ON inventory(deleted_at);
 
     CREATE INDEX IF NOT EXISTS idx_vendor_ledger_vendor_id ON vendor_ledger(vendor_id);
-    CREATE INDEX IF NOT EXISTS idx_vendor_ledger_product_id ON vendor_ledger(product_id);
     CREATE INDEX IF NOT EXISTS idx_vendor_ledger_transaction_datetime ON vendor_ledger(transaction_datetime);
     CREATE INDEX IF NOT EXISTS idx_vendor_ledger_deleted_at ON vendor_ledger(deleted_at);
 
@@ -351,7 +494,6 @@ function createIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_vendor_invoices_deleted_at ON vendor_invoices(deleted_at);
 
     CREATE INDEX IF NOT EXISTS idx_customer_ledger_customer_id ON customer_ledger(customer_id);
-    CREATE INDEX IF NOT EXISTS idx_customer_ledger_product_id ON customer_ledger(product_id);
     CREATE INDEX IF NOT EXISTS idx_customer_ledger_transaction_datetime ON customer_ledger(transaction_datetime);
     CREATE INDEX IF NOT EXISTS idx_customer_ledger_deleted_at ON customer_ledger(deleted_at);
 
@@ -375,6 +517,9 @@ function createIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_expense_categories_deleted_at ON expense_categories(deleted_at);
 
     CREATE INDEX IF NOT EXISTS idx_day_closing_reports_business_date ON day_closing_reports(business_date);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+    CREATE INDEX IF NOT EXISTS idx_audit_logs_deleted_at ON audit_logs(deleted_at);
   `);
 }
 

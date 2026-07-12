@@ -53,6 +53,7 @@ export interface VendorLedgerEntry {
   vendor_name?: string
   product_name?: string
   vendor_invoice_id?: string | null
+  invoice_due_date?: string | null
 }
 
 export interface CustomerLedgerEntry {

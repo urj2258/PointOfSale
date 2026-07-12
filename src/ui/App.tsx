@@ -18,6 +18,7 @@ import DayClosingPage from './pages/day-closing/DayClosingPage'
 import InvoicesPage from './pages/invoices/InvoicesPage'
 import VendorInvoicesPage from './pages/vendor-invoices/VendorInvoicesPage'
 import SettingsPage from './pages/settings/SettingsPage'
+import BackupLogsPage from './pages/settings/BackupLogsPage'
 
 function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
@@ -68,6 +69,7 @@ function App() {
           <Route path="/vendor-invoices" element={<VendorInvoicesPage />} />
           <Route path="/day-closing" element={<DayClosingPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/backup-logs" element={<BackupLogsPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -36,6 +36,14 @@ function writeLastSyncTime(timestamp: string): void {
   fs.writeFileSync(getSyncMetaPath(), JSON.stringify({ last_sync_time: timestamp }), 'utf-8');
 }
 
+export function clearSyncMeta(): void {
+  try {
+    if (fs.existsSync(getSyncMetaPath())) {
+      fs.unlinkSync(getSyncMetaPath());
+    }
+  } catch { /* ignore */ }
+}
+
 /**
  * Conflict policy: last-write-wins by updated_at. Single-device-at-a-time
  * usage assumed. If the same row is edited on two devices before either

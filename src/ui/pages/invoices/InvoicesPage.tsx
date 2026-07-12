@@ -287,9 +287,6 @@ const statusColor: Record<string, string> = {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Customer Invoices</h1>
-        <button onClick={openCreate} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
-          Add Invoice
-        </button>
       </div>
 
       <div className="flex gap-3 items-center">

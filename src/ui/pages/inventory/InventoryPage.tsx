@@ -9,15 +9,7 @@ import ConfirmModal from '../../components/ui/ConfirmModal'
 import toast from 'react-hot-toast'
 
 const ALLOWED_UNITS = [
-  'bag',  'ton' , 'kg' , 'gram',
-  'liter', 'ml', 'meter',  'cm', 'mm',
-  'feet', 'foot', 'inch', 'inches', 'yard', 'yards',
-  'pieces', , 'pcs', 'box', , 'carton', 
-  'roll',  'drum', 'can', 
-  'bottle', 'sack', , 'bundle', 
-  'sheet', 'sheets', 'coil', 'coils', 'tank', 
-  'set', 'sets', 'pair', 'pairs', 'unit', 
-  'dozen', 'quintal'
+    'gram', 'kg', 'ton'  
 ]
 
 type Form = { name: string; unit: string; quantity: string; description: string }
@@ -46,6 +38,7 @@ function validateField<K extends keyof Form>(field: K, value: string): string | 
       if (n < 0) return 'Quantity cannot be negative.'
       return undefined
     }
+
     case 'description': {
       if (!v) return undefined
       if (v.length < 5 || v.length > 500) return 'Description must be 5-500 characters.'
@@ -156,12 +149,6 @@ export default function InventoryPage() {
       let result: any
       if (editing) {
         result = await api.inventory.update(editing.id, form.name.trim(), form.unit.trim().toLowerCase(), form.description.trim() || undefined)
-        // Also update quantity if it changed
-        const newQty = Number(form.quantity)
-        const diff = newQty - editing.quantity
-        if (diff !== 0) {
-          await api.inventory.adjustStock(editing.id, diff)
-        }
       } else {
         result = await api.inventory.create(form.name.trim(), form.unit.trim().toLowerCase(), Number(form.quantity), form.description.trim() || undefined)
       }
@@ -262,28 +249,33 @@ export default function InventoryPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Product' : 'Add Product'}>
         <div className="space-y-4">
           {serverError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{serverError}</p>}
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Name *</label>
-            <input type="text" value={form.name} onChange={(e) => setField('name', e.target.value)} onBlur={() => onBlur('name')}
-              className={inputClass('name')} placeholder="e.g. Portland Cement" />
-            {touched.name && fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Unit *</label>
-            <select value={form.unit} onChange={(e) => { setField('unit', e.target.value); setTouched(prev => ({ ...prev, unit: true })); }}
-              className={inputClass('unit')}>
-              <option value="">Select a unit...</option>
-              {ALLOWED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-            </select>
-            {touched.unit && fieldErrors.unit && <p className="text-xs text-red-500 mt-1">{fieldErrors.unit}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Quantity *</label>
-            <input type="number" min={0} step={1} value={form.quantity} onChange={(e) => setField('quantity', e.target.value)} onBlur={() => onBlur('quantity')}
-              className={inputClass('quantity')} placeholder="0"
-              onKeyDown={(e) => { if (e.key === '.' || e.key === '-' || e.key === 'e') e.preventDefault() }} />
-            {touched.quantity && fieldErrors.quantity && <p className="text-xs text-red-500 mt-1">{fieldErrors.quantity}</p>}
-          </div>
+          {!editing && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Name *</label>
+                <input type="text" value={form.name} onChange={(e) => setField('name', e.target.value)} onBlur={() => onBlur('name')}
+                  className={inputClass('name')} placeholder="e.g. Portland Cement" />
+                {touched.name && fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Unit *</label>
+                <select value={form.unit} onChange={(e) => { setField('unit', e.target.value); setTouched(prev => ({ ...prev, unit: true })); }}
+                  className={inputClass('unit')}>
+                  <option value="">Select a unit...</option>
+                  {ALLOWED_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+                {touched.unit && fieldErrors.unit && <p className="text-xs text-red-500 mt-1">{fieldErrors.unit}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Quantity *</label>
+                <input type="number" min={0} step={1} value={form.quantity} onChange={(e) => setField('quantity', e.target.value)} onBlur={() => onBlur('quantity')}
+                  className={inputClass('quantity')} placeholder="0"
+                  onKeyDown={(e) => { if (e.key === '.' || e.key === '-' || e.key === 'e') e.preventDefault() }} />
+                {touched.quantity && fieldErrors.quantity && <p className="text-xs text-red-500 mt-1">{fieldErrors.quantity}</p>}
+              </div>
+            </>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description</label>
             <textarea value={form.description} onChange={(e) => setField('description', e.target.value)} onBlur={() => onBlur('description')}

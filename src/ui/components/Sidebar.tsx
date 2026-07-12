@@ -20,6 +20,7 @@ const navItems: NavItem[] = [
   { label: 'Expenses', icon: 'expense', to: '/expenses' },
   { label: 'Day Closing', icon: 'day-closing', to: '/day-closing' },
   { label: 'Settings', icon: 'settings', to: '/settings' },
+  { label: 'Backup Logs', icon: 'file-text', to: '/backup-logs' },
 ]
 
 interface NavIconProps {

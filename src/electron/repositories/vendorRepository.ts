@@ -1,3 +1,4 @@
+import Database from 'better-sqlite3';
 import { getDatabase } from '../database.js';
 import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
@@ -46,6 +47,25 @@ export function createVendor(name: string, phone?: string, address?: string, mil
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `).run(id, name, phone ?? null, address ?? null, mill_name ?? null, now, now);
   return getVendorById(id);
+}
+
+/**
+ * Low-level insert usable inside an external db.transaction().
+ * Does NOT open its own transaction — caller is responsible.
+ */
+export function insertVendorInTx(
+  db: Database.Database,
+  id: string,
+  now: string,
+  name: string,
+  phone: string,
+  address: string,
+  mill_name?: string
+): void {
+  db.prepare(`
+    INSERT INTO vendors (id, name, phone, address, mill_name, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone, address, mill_name ?? null, now, now);
 }
 
 export function updateVendor(id: string, name: string, phone?: string, address?: string, mill_name?: string) {

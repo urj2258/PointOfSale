@@ -156,6 +156,39 @@ export function createInvoice(
   return getInvoiceWithItems(id);
 }
 
+/**
+ * Low-level insert usable inside an external db.transaction().
+ */
+export function insertInvoiceInTx(
+  db: import('better-sqlite3').Database,
+  id: string, now: string, customerId: string, invoiceNumber: string,
+  issueDate: string, dueDate: string, subtotal: number, taxAmount: number,
+  discountAmount: number, total: number, paidAmount: number, notes?: string
+): string {
+  const remainingBalance = Math.max(0, total - paidAmount);
+  const status = remainingBalance <= 0 ? 'Paid' : 'Pending';
+
+  db.prepare(`
+    INSERT INTO invoices (id, customer_id, invoice_number, issue_date, due_date,
+      subtotal, tax_amount, discount_amount, total, paid_amount, remaining_balance,
+      status, notes, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, customerId, invoiceNumber, issueDate, dueDate, subtotal, taxAmount, discountAmount, total, paidAmount, remainingBalance, status, notes ?? null, now, now);
+  
+  return status;
+}
+
+export function insertInvoiceItemInTx(
+  db: import('better-sqlite3').Database,
+  id: string, now: string, invoiceId: string, productId: string,
+  quantity: number, ratePerUnit: number, total: number
+): void {
+  db.prepare(`
+    INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, invoiceId, productId, quantity, ratePerUnit, total, now, now);
+}
+
 export function updateInvoice(
   id: string, customerId: string, invoiceNumber: string,
   issueDate: string, dueDate: string, subtotal: number,

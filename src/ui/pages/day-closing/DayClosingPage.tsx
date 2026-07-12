@@ -54,7 +54,7 @@ export default function DayClosingPage() {
     { key: 'total_purchases', label: 'Total Purchases', render: (r: DayClosingReport) => `Rs. ${r.total_purchases.toLocaleString()}` },
     { key: 'total_expenses', label: 'Total Expenses', render: (r: DayClosingReport) => `Rs. ${r.total_expenses.toLocaleString()}` },
     {
-      key: 'net', label: 'Net',
+      key: 'net', label: 'Net Profit',
       render: (r: DayClosingReport) => {
         const net = r.total_sales - r.total_purchases - r.total_expenses
         return <span className={net >= 0 ? 'text-green-600' : 'text-red-600'}>Rs. {net.toLocaleString()}</span>

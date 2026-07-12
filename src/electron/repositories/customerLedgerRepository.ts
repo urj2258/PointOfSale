@@ -2,16 +2,15 @@ import Database from 'better-sqlite3';
 import { getDatabase } from '../database.js';
 import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
+import { insertCustomerInTx } from './customerRepository.js';
+
 
 export interface CustomerLedgerRow {
   id: string
   customer_id: string
-  product_id: string
   transaction_datetime: string
   description: string | null
   vehicle_number: string | null
-  quantity: number
-  rate_per_unit: number
   total_payment: number
   paid_amount: number
   remaining_balance: number
@@ -67,14 +66,18 @@ export function getCustomerLedgerEntries(customerId?: string, dateFrom?: string,
   `).get(...params) as { total: number };
 
   const data = db.prepare(`
-    SELECT cl.*, c.name as customer_name, i.name as product_name
+    SELECT cl.*, c.name as customer_name,
+           inv.due_date as invoice_due_date,
+           (SELECT group_concat(i.name, ', ') FROM invoice_items ii JOIN inventory i ON i.id = ii.product_id WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as product_name,
+           (SELECT SUM(quantity) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as quantity,
+           (SELECT AVG(rate_per_unit) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as rate_per_unit
     FROM customer_ledger cl
     LEFT JOIN customers c ON c.id = cl.customer_id
-    LEFT JOIN inventory i ON i.id = cl.product_id
+    LEFT JOIN invoices inv ON inv.id = cl.invoice_id
     ${where}
     ORDER BY cl.transaction_datetime DESC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset) as (CustomerLedgerRow & { customer_name: string; product_name: string })[];
+  `).all(...params, limit, offset) as (CustomerLedgerRow & { customer_name: string; product_name: string; quantity: number; rate_per_unit: number; invoice_due_date: string | null })[];
 
   return { data, total: countRow.total, page, limit };
 }
@@ -82,49 +85,81 @@ export function getCustomerLedgerEntries(customerId?: string, dateFrom?: string,
 export function getCustomerLedgerById(id: string) {
   const db = getDatabase();
   return db.prepare(`
-    SELECT cl.*, c.name as customer_name, i.name as product_name
+    SELECT cl.*, c.name as customer_name,
+           inv.due_date as invoice_due_date,
+           (SELECT group_concat(i.name, ', ') FROM invoice_items ii JOIN inventory i ON i.id = ii.product_id WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as product_name,
+           (SELECT SUM(quantity) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as quantity,
+           (SELECT AVG(rate_per_unit) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as rate_per_unit
     FROM customer_ledger cl
     LEFT JOIN customers c ON c.id = cl.customer_id
-    LEFT JOIN inventory i ON i.id = cl.product_id
+    LEFT JOIN invoices inv ON inv.id = cl.invoice_id
     WHERE cl.id = ? AND cl.deleted_at IS NULL
-  `).get(id) as (CustomerLedgerRow & { customer_name: string; product_name: string }) | undefined;
+  `).get(id) as (CustomerLedgerRow & { customer_name: string; product_name: string; quantity: number; rate_per_unit: number; invoice_due_date: string | null }) | undefined;
 }
 
-export function createCustomerLedgerEntry(
-  customerId: string, productId: string, transactionDatetime: string,
-  quantity: number, ratePerUnit: number, totalPayment: number,
-  paidAmount: number, description?: string, vehicleNumber?: string
+export function createMultiItemSale(
+  customer: { id?: string; name: string; phone: string; address: string; shop_name?: string },
+  sale: {
+    items: { productId: string; quantity: number; ratePerUnit: number }[];
+    transactionDatetime: string; totalPayment: number; paidAmount: number;
+    description?: string; vehicleNumber?: string; dueDate?: string;
+  }
 ) {
   const db = getDatabase();
   const now = new Date().toISOString();
-  const id = crypto.randomUUID();
-  const remainingBalance = totalPayment - paidAmount;
-
-  const insertLedger = db.prepare(`
-    INSERT INTO customer_ledger (id, customer_id, product_id, transaction_datetime, description, vehicle_number,
-      quantity, rate_per_unit, total_payment, paid_amount, remaining_balance, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  const updateStock = db.prepare(`
-    UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?
-  `);
+  
+  const customerId = customer.id || crypto.randomUUID();
+  const ledgerId = crypto.randomUUID();
+  const invoiceId = crypto.randomUUID();
+  const remainingBalance = sale.totalPayment - sale.paidAmount;
 
   const transaction = db.transaction(() => {
-    insertLedger.run(id, customerId, productId, transactionDatetime, description ?? null, vehicleNumber ?? null,
-      quantity, ratePerUnit, totalPayment, paidAmount, remainingBalance, now, now);
-    const result = updateStock.run(quantity, now, productId);
-    if (result.changes === 0) throw new Error('Product not found in inventory');
+    // 1. Insert the new customer if no ID was provided
+    if (!customer.id) {
+      insertCustomerInTx(db, customerId, now, customer.name, customer.phone, customer.address, customer.shop_name);
+    }
+
+    // 2. Create invoice
+    const invoiceTotal = sale.items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+    const invoiceNumber = `INV-${Date.now()}`;
+    const resolvedDueDate = sale.dueDate || sale.transactionDatetime.split('T')[0];
+    
+    db.prepare(`
+      INSERT INTO invoices (id, customer_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(invoiceId, customerId, invoiceNumber, sale.transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, sale.paidAmount, invoiceTotal - sale.paidAmount, (invoiceTotal - sale.paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
+
+    // 3. Insert items and deduct stock
+    for (const item of sale.items) {
+      const itemId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+
+      const result = db.prepare(`UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(item.quantity, now, item.productId);
+      if (result.changes === 0) throw new Error('Product not found in inventory');
+    }
+
+    // 4. Create customer_ledger entry
+    db.prepare(`
+      INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, created_at, updated_at, invoice_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, customerId, sale.transactionDatetime, sale.description ?? null, sale.vehicleNumber ?? null,
+      sale.totalPayment, sale.paidAmount, remainingBalance, now, now, invoiceId);
   });
 
   transaction();
-  return getCustomerLedgerById(id);
+  return getCustomerLedgerById(ledgerId);
 }
 
-export function updateCustomerLedgerEntry(
-  id: string, customerId: string, productId: string, transactionDatetime: string,
-  quantity: number, ratePerUnit: number, totalPayment: number,
-  paidAmount: number, description?: string, vehicleNumber?: string
+export function updateMultiItemSale(
+  id: string, customerId: string, transactionDatetime: string,
+  items: { productId: string; quantity: number; ratePerUnit: number }[],
+  totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string,
+  dueDate?: string
 ) {
   const db = getDatabase();
   const existing = getCustomerLedgerById(id);
@@ -136,10 +171,7 @@ export function updateCustomerLedgerEntry(
 
     updateRow(db, 'customer_ledger', id, {
       customer_id: customerId,
-      product_id: productId,
       transaction_datetime: transactionDatetime,
-      quantity,
-      rate_per_unit: ratePerUnit,
       total_payment: totalPayment,
       paid_amount: paidAmount,
       remaining_balance: remainingBalance,
@@ -147,18 +179,46 @@ export function updateCustomerLedgerEntry(
       vehicle_number: vehicleNumber ?? null,
     });
 
-    const oldQty = existing.quantity;
-    const oldProductId = existing.product_id;
-    const qtyDiff = quantity - oldQty;
-
-    if (oldProductId !== productId) {
-      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(oldQty, now, oldProductId);
-      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(quantity, now, productId);
-    } else if (qtyDiff !== 0) {
-      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(qtyDiff, now, productId);
-    }
-
     if (existing.invoice_id) {
+      // 1. Load old items so we can restore their inventory contribution
+      const oldItems = db.prepare(
+        `SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ? AND deleted_at IS NULL`
+      ).all(existing.invoice_id) as { product_id: string; quantity: number }[];
+
+      // 2. Restore old stock (customer sales SUBTRACT stock, so restore = ADD back)
+      for (const old of oldItems) {
+        db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
+          .run(old.quantity, now, old.product_id);
+      }
+
+      // 3. Soft-delete ALL existing items for this invoice
+      db.prepare(
+        'UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL'
+      ).run(now, now, existing.invoice_id);
+
+      // 4. Insert fresh items and deduct new stock
+      for (const item of items) {
+        const itemId = crypto.randomUUID();
+        db.prepare(
+          `INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(itemId, existing.invoice_id, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+        const result = db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
+          .run(item.quantity, now, item.productId);
+        if (result.changes === 0) throw new Error('Product not found in inventory');
+      }
+
+      // 5. Update invoice header totals, issue date, due date
+      const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+      const issueDate = transactionDatetime.split('T')[0];
+      const resolvedDueDate = dueDate || issueDate;
+      updateRow(db, 'invoices', existing.invoice_id, {
+        total: invoiceTotal,
+        subtotal: invoiceTotal,
+        customer_id: customerId,
+        issue_date: issueDate,
+        due_date: resolvedDueDate,
+      });
+
       syncCustomerInvoiceFromLedger(db, existing.invoice_id, now);
     }
   });
@@ -166,6 +226,7 @@ export function updateCustomerLedgerEntry(
   transaction();
   return getCustomerLedgerById(id);
 }
+
 
 export function softDeleteCustomerLedgerEntry(id: string) {
   const db = getDatabase();
@@ -177,15 +238,16 @@ export function softDeleteCustomerLedgerEntry(id: string) {
 
     // Cascade: soft-delete linked invoice + items
     if (entry.invoice_id) {
+      const items = db.prepare(`SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ? AND deleted_at IS NULL`).all(entry.invoice_id) as { product_id: string; quantity: number }[];
+      for (const item of items) {
+        db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(item.quantity, now, item.product_id);
+      }
+
       db.prepare('UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL')
         .run(now, now, entry.invoice_id);
       db.prepare('UPDATE invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL')
         .run(now, now, entry.invoice_id);
     }
-
-    // Restore inventory
-    db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
-      .run(entry.quantity, now, entry.product_id);
 
     // Soft-delete the ledger entry itself (last)
     softDeleteRow(db, 'customer_ledger', id);

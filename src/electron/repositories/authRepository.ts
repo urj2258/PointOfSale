@@ -43,3 +43,9 @@ export function getOwnerStatus() {
   const count = (db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number }).count;
   return { hasOwner: count > 0 };
 }
+
+export function getOwner(): { id: string; full_name: string } | null {
+  const db = getDatabase();
+  const user = db.prepare('SELECT id, full_name FROM users WHERE deleted_at IS NULL LIMIT 1').get() as { id: string; full_name: string } | undefined;
+  return user ?? null;
+}
