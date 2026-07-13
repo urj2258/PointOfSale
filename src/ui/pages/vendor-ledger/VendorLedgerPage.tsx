@@ -191,10 +191,16 @@ export default function VendorLedgerPage() {
     if (vendorMode === 'existing' && !form.vendor_id) { toast.error('Please select a vendor.'); return }
     if (!form.transaction_datetime) { toast.error('Fill required fields'); return }
 
-    // Due date validation: must not be before purchase date
+    // Due date validation: must not be before purchase date or today
     if (form.due_date) {
+      const todayISO = new Date().toISOString().split('T')[0]
       const purchaseISO = toISO(form.transaction_datetime.split(' ')[0])
       const dueISO = toISO(form.due_date)
+      
+      if (dueISO < todayISO) {
+        toast.error('Due date cannot be in the past')
+        return
+      }
       if (dueISO && purchaseISO && dueISO < purchaseISO) {
         toast.error('Due date cannot be earlier than the purchase date')
         return

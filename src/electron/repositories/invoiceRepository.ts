@@ -142,6 +142,22 @@ export function createInvoice(
   `);
 
   const transaction = db.transaction(() => {
+    const checkStock = db.prepare(
+      'SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL'
+    );
+
+    for (const item of items) {
+      const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
+      if (!row) {
+        throw new Error(`Product not found in inventory (id: ${item.productId})`);
+      }
+      if (item.quantity > row.quantity) {
+        throw new Error(
+          `Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`
+        );
+      }
+    }
+
     insertInvoice.run(id, customerId, invoiceNumber, issueDate, dueDate,
       subtotal, taxAmount, discountAmount, total, paidAmount, remainingBalance,
       status, notes ?? null, now, now);

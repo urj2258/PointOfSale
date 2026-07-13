@@ -90,7 +90,7 @@ contextBridge.exposeInMainWorld('electron', {
     generate: (businessDate: string) => ipcRenderer.invoke('day-closing:generate', businessDate),
   },
   dashboard: {
-    stats: (threshold?: number) => ipcRenderer.invoke('dashboard:stats', threshold),
+    stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => ipcRenderer.invoke('dashboard:stats', threshold, period, startDate, endDate),
   },
   auth: {
     login: (email: string, password: string) => ipcRenderer.invoke('auth:login', email, password),

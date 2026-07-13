@@ -15,13 +15,7 @@ export function registerDbIpc() {
       if (!fs.existsSync(srcPath)) return { success: false, error: 'Database file not found' };
 
       const dir = destDir || app.getPath('desktop');
-      const now = new Date();
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const hours = now.getHours();
-      const ampm = hours >= 12 ? 'PM' : 'AM';
-      const h12 = hours % 12 || 12;
-      const timestamp = `${pad(now.getMonth() + 1)}-${pad(now.getDate())}-${now.getFullYear()}-${pad(h12)}-${pad(now.getMinutes())}-${pad(now.getSeconds())}-${ampm}`;
-      const destPath = path.join(dir, `pos-backup-${timestamp}.db`);
+      const destPath = path.join(dir, 'pos-backup.db');
 
       fs.copyFileSync(srcPath, destPath);
 

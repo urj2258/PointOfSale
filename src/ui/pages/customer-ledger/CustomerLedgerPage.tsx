@@ -224,10 +224,17 @@ export default function CustomerLedgerPage() {
     setError('')
     const isoDt = toISODatetime(form.transaction_datetime)
     const isoDueDate = toISO(form.due_date)
-    
-    if (isoDueDate && isoDt && isoDueDate < isoDt.split('T')[0]) {
-      setError('Due date cannot be earlier than the transaction date')
-      return
+    const todayISO = new Date().toISOString().split('T')[0]
+
+    if (isoDueDate) {
+      if (isoDueDate < todayISO) {
+        toast.error('Due date cannot be in the past')
+        return
+      }
+      if (isoDt && isoDueDate < isoDt.split('T')[0]) {
+        toast.error('Due date cannot be earlier than the sale date')
+        return
+      }
     }
     
     const mappedItems = validItems.map(it => ({
@@ -237,8 +244,9 @@ export default function CustomerLedgerPage() {
     }))
 
     try {
+      let result: any;
       if (editing) {
-        await api.customerLedger.updateMultiItem(editing.id, form.customer_id, {
+        result = await api.customerLedger.updateMultiItem(editing.id, form.customer_id, {
           items: mappedItems,
           transactionDatetime: isoDt,
           totalPayment: Number(form.total_payment),
@@ -248,18 +256,26 @@ export default function CustomerLedgerPage() {
           dueDate: isoDueDate || undefined
         })
       } else if (customerMode === 'new') {
-        const result = await api.customerLedger.createMultiItem(
+        result = await api.customerLedger.createMultiItem(
           { name: newCustomerForm.name, phone: newCustomerForm.phone, address: newCustomerForm.address, shop_name: newCustomerForm.shop_name || undefined },
           { items: mappedItems, transactionDatetime: isoDt, totalPayment: Number(form.total_payment), paidAmount: Number(form.paid_amount), description: form.description || undefined, vehicleNumber: form.vehicle_number || undefined, dueDate: isoDueDate || undefined }
         )
-        if ((result as any)?.error) { toast.error((result as any).error); return }
-        api.customers.list(undefined, 1, 1000).then((r: PaginatedResult<Customer>) => setCustomers(r.data))
       } else {
-        await api.customerLedger.createMultiItem(
+        result = await api.customerLedger.createMultiItem(
           { id: form.customer_id, name: '', phone: '', address: '' },
           { items: mappedItems, transactionDatetime: isoDt, totalPayment: Number(form.total_payment), paidAmount: Number(form.paid_amount), description: form.description || undefined, vehicleNumber: form.vehicle_number || undefined, dueDate: isoDueDate || undefined }
         )
       }
+
+      if (result && typeof result === 'object' && 'error' in result) {
+        toast.error(result.error as string);
+        return;
+      }
+
+      if (customerMode === 'new' && !editing) {
+        api.customers.list(undefined, 1, 1000).then((r: PaginatedResult<Customer>) => setCustomers(r.data));
+      }
+
       setModalOpen(false)
       load()
       toast.success(editing ? 'Sale updated successfully' : 'Sale created successfully')

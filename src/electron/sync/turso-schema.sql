@@ -54,12 +54,9 @@ CREATE TABLE IF NOT EXISTS expense_categories (
 CREATE TABLE IF NOT EXISTS vendor_ledger (
   id TEXT PRIMARY KEY,
   vendor_id TEXT NOT NULL,
-  product_id TEXT NOT NULL,
   transaction_datetime TEXT NOT NULL,
   description TEXT,
   vehicle_number TEXT,
-  quantity REAL NOT NULL CHECK (quantity > 0),
-  rate_per_unit REAL NOT NULL CHECK (rate_per_unit > 0),
   total_payment REAL NOT NULL CHECK (total_payment >= 0),
   paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
   remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
@@ -69,7 +66,6 @@ CREATE TABLE IF NOT EXISTS vendor_ledger (
   synced INTEGER NOT NULL DEFAULT 0,
   vendor_invoice_id TEXT DEFAULT NULL,
   FOREIGN KEY (vendor_id) REFERENCES vendors(id),
-  FOREIGN KEY (product_id) REFERENCES inventory(id),
   FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
 );
 
@@ -112,12 +108,9 @@ CREATE TABLE IF NOT EXISTS vendor_invoice_items (
 CREATE TABLE IF NOT EXISTS customer_ledger (
   id TEXT PRIMARY KEY,
   customer_id TEXT NOT NULL,
-  product_id TEXT NOT NULL,
   transaction_datetime TEXT NOT NULL,
   description TEXT,
   vehicle_number TEXT,
-  quantity REAL NOT NULL CHECK (quantity > 0),
-  rate_per_unit REAL NOT NULL CHECK (rate_per_unit > 0),
   total_payment REAL NOT NULL CHECK (total_payment >= 0),
   paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
   remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
@@ -127,7 +120,6 @@ CREATE TABLE IF NOT EXISTS customer_ledger (
   synced INTEGER NOT NULL DEFAULT 0,
   invoice_id TEXT DEFAULT NULL,
   FOREIGN KEY (customer_id) REFERENCES customers(id),
-  FOREIGN KEY (product_id) REFERENCES inventory(id),
   FOREIGN KEY (invoice_id) REFERENCES invoices(id)
 );
 

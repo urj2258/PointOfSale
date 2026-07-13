@@ -232,6 +232,35 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
+          <div className="text-amber-600 dark:text-amber-400 mt-0.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+          </div>
+          <div className="space-y-2">
+            <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Sync Guidelines</h3>
+            <div className="text-xs text-amber-700 dark:text-amber-400/90 space-y-1.5">
+              <div className="flex items-start gap-2">
+                <span className="text-green-600 dark:text-green-400 font-bold shrink-0">Do:</span>
+                <div>
+                  <p>• Always sync before switching to another device</p>
+                  <p>• Let sync finish completely before closing the app</p>
+                  <p>• Keep your system clock accurate</p>
+                  <p>• Use "Sync Now" instead of "Pull" alone</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="text-red-600 dark:text-red-400 font-bold shrink-0">Don't:</span>
+                <div>
+                  <p>• Edit the same record on two devices at once</p>
+                  <p>• Force-quit the app during sync</p>
+                  <p>• Change system time backwards</p>
+                  <p>• Pull data without pushing first</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-3">
           <button onClick={handleSync} disabled={syncing}
             className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">

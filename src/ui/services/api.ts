@@ -93,7 +93,7 @@ export const api = {
     generate: (businessDate: string) => e.dayClosing.generate(businessDate),
   },
   dashboard: {
-    stats: (threshold?: number) => e.dashboard.stats(threshold),
+    stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => e.dashboard.stats(threshold, period, startDate, endDate),
   },
   auth: {
     login: (email: string, password: string) => e.auth.login(email, password),

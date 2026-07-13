@@ -198,15 +198,32 @@ export default function InvoicesPage() {
     const items = form.items.map(i => ({ productId: i.productId, quantity: i.quantity, ratePerUnit: i.ratePerUnit }))
     const isoIssue = toISO(form.issue_date)
     const isoDue = toISO(form.due_date)
+    const todayISO = new Date().toISOString().split('T')[0]
+
+    if (isoDue) {
+      if (isoDue < todayISO) {
+        toast.error('Due date cannot be in the past')
+        return
+      }
+      if (isoIssue && isoDue < isoIssue) {
+        toast.error('Due date cannot be earlier than the issue date')
+        return
+      }
+    }
     try {
       if (editing) {
         await api.invoices.update(editing.id, form.customer_id, form.invoice_number, isoIssue, isoDue,
           form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount, editing.status, form.notes || undefined)
         await api.invoices.replaceItems(editing.id, items)
       } else {
-        const newInv = await api.invoices.create(form.customer_id, form.invoice_number, isoIssue, isoDue,
+        const result = await api.invoices.create(form.customer_id, form.invoice_number, isoIssue, isoDue,
           form.subtotal, form.tax_amount, form.discount_amount, form.total, form.paid_amount,
-          form.notes || undefined, items) as Invoice
+          form.notes || undefined, items) as Invoice | { error: string }
+        if (result && typeof result === 'object' && 'error' in result) {
+          toast.error((result as { error: string }).error)
+          return
+        }
+        const newInv = result as Invoice
         if (selectedEntryIds.length > 0 && newInv?.id) {
           await api.customerLedger.linkToInvoice(selectedEntryIds, newInv.id)
         }
@@ -304,7 +321,7 @@ const statusColor: Record<string, string> = {
         <DataTable
           columns={columns}
           data={data?.data ?? []}
-          onEdit={openEdit}
+          // onEdit={openEdit}
           onDelete={handleDelete}
           loading={loading}
         />
@@ -377,20 +394,24 @@ const statusColor: Record<string, string> = {
               <button onClick={addItemLine} className="text-xs px-2 py-1 rounded-lg bg-brand-primary/20 text-brand-text-primary hover:bg-brand-primary/30 transition-colors">+ Add Item</button>
             </div>
             {form.items.map((item, idx) => (
-              <div key={idx} className="flex gap-2 mb-2 items-start">
-                <select value={item.productId} onChange={(e) => handleItemProduct(idx, e.target.value)}
-                  className="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
-                  <option value="">Select product</option>
-                  {inventory.map(p => <option key={p.id} value={p.id}>{p.name} ({p.unit}) — stock: {p.quantity}</option>)}
-                </select>
-                <input type="number" value={item.quantity || ''} onChange={(e) => updateItemLine(idx, 'quantity', Number(e.target.value))}
-                  placeholder="Qty" min="0.01" step="0.01"
-                  className="w-16 px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-                <input type="number" value={item.ratePerUnit || ''} onChange={(e) => updateItemLine(idx, 'ratePerUnit', Number(e.target.value))}
-                  placeholder="Rate" min="0" step="0.01"
-                  className="w-20 px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-                <span className="text-xs text-brand-text-muted py-1.5">Rs {(item.quantity * item.ratePerUnit).toFixed(2)}</span>
-                <button onClick={() => removeItemLine(idx)} className="p-1.5 text-red-500 hover:text-red-700">×</button>
+              <div key={idx} className="mb-2">
+                <div className="flex gap-2 items-start">
+                  <select value={item.productId} onChange={(e) => handleItemProduct(idx, e.target.value)}
+                    className="flex-1 px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                    <option value="">Select product</option>
+                    {inventory.map(p => <option key={p.id} value={p.id}>{p.name} ({p.unit}) — stock: {p.quantity}</option>)}
+                  </select>
+                  <div className="w-16">
+                    <input type="number" value={item.quantity || ''} onChange={(e) => updateItemLine(idx, 'quantity', Number(e.target.value))}
+                      placeholder="Qty" min="0.01" step="0.01"
+                      className="w-full px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+                  </div>
+                  <input type="number" value={item.ratePerUnit || ''} onChange={(e) => updateItemLine(idx, 'ratePerUnit', Number(e.target.value))}
+                    placeholder="Rate" min="0" step="0.01"
+                    className="w-20 px-2 py-1.5 text-xs rounded-lg border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+                  <span className="text-xs text-brand-text-muted py-1.5">Rs {(item.quantity * item.ratePerUnit).toFixed(2)}</span>
+                  <button onClick={() => removeItemLine(idx)} className="p-1.5 text-red-500 hover:text-red-700">×</button>
+                </div>
               </div>
             ))}
           </div>

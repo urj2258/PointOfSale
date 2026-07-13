@@ -130,6 +130,21 @@ export function createMultiItemSale(
     `).run(invoiceId, customerId, invoiceNumber, sale.transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, sale.paidAmount, invoiceTotal - sale.paidAmount, (invoiceTotal - sale.paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
 
     // 3. Insert items and deduct stock
+    const checkStock = db.prepare('SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL');
+    
+    // Validate all requested items before proceeding
+    for (const item of sale.items) {
+      const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
+      if (!row) {
+        throw new Error(`Product not found in inventory (id: ${item.productId})`);
+      }
+      if (item.quantity > row.quantity) {
+        throw new Error(
+          `Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`
+        );
+      }
+    }
+
     for (const item of sale.items) {
       const itemId = crypto.randomUUID();
       db.prepare(`
@@ -197,6 +212,18 @@ export function updateMultiItemSale(
       ).run(now, now, existing.invoice_id);
 
       // 4. Insert fresh items and deduct new stock
+      const checkStock = db.prepare('SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL');
+      
+      for (const item of items) {
+        const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
+        if (!row) throw new Error(`Product not found in inventory (id: ${item.productId})`);
+        
+        // Note: quantity here includes the old stock we just restored (since we did UPDATE inventory SET quantity = quantity + old)
+        if (item.quantity > row.quantity) {
+          throw new Error(`Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`);
+        }
+      }
+
       for (const item of items) {
         const itemId = crypto.randomUUID();
         db.prepare(

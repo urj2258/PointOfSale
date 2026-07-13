@@ -198,6 +198,18 @@ export default function VendorInvoicesPage() {
     const items = form.items.map(i => ({ productId: i.productId, quantity: i.quantity, ratePerUnit: i.ratePerUnit }))
     const isoIssue = toISO(form.issue_date)
     const isoDue = toISO(form.due_date)
+    const todayISO = new Date().toISOString().split('T')[0]
+
+    if (isoDue) {
+      if (isoDue < todayISO) {
+        toast.error('Due date cannot be in the past')
+        return
+      }
+      if (isoIssue && isoDue < isoIssue) {
+        toast.error('Due date cannot be earlier than the issue date')
+        return
+      }
+    }
     try {
       if (editing) {
         await api.vendorInvoices.update(editing.id, form.vendor_id, form.invoice_number, isoIssue, isoDue,
@@ -304,7 +316,7 @@ const statusColor: Record<string, string> = {
         <DataTable
           columns={columns}
           data={data?.data ?? []}
-          onEdit={openEdit}
+          // onEdit={openEdit}
           onDelete={handleDelete}
           loading={loading}
         />
