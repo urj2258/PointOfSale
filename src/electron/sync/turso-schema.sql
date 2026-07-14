@@ -184,12 +184,13 @@ CREATE TABLE IF NOT EXISTS day_closing_reports (
   synced INTEGER NOT NULL DEFAULT 0
 );
 
-CREATE TABLE IF NOT EXISTS users (
+CREATE TABLE IF NOT EXISTS audit_logs (
   id TEXT PRIMARY KEY,
-  full_name TEXT NOT NULL,
-  email TEXT NOT NULL UNIQUE,
-  username TEXT NOT NULL UNIQUE,
-  password TEXT NOT NULL,
+  action TEXT NOT NULL CHECK (action IN ('sync', 'pull', 'export', 'import', 'nuke')),
+  status TEXT NOT NULL CHECK (status IN ('success', 'failure', 'partial')),
+  user_id TEXT NOT NULL,
+  user_name TEXT NOT NULL,
+  details TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   deleted_at TEXT NULL,

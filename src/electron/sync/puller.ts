@@ -70,10 +70,11 @@ async function pullTable(table: string, lastSyncTime: string): Promise<PullResul
   return result;
 }
 
-export async function pullAll(tables: string[], lastSyncTime: string): Promise<PullResult[]> {
+export async function pullAll(tables: string[], lastSyncTime: string, onTableStart?: (table: string, index: number) => void): Promise<PullResult[]> {
   const results: PullResult[] = [];
-  for (const table of tables) {
-    results.push(await pullTable(table, lastSyncTime));
+  for (let i = 0; i < tables.length; i++) {
+    onTableStart?.(tables[i], i);
+    results.push(await pullTable(tables[i], lastSyncTime));
   }
   return results;
 }

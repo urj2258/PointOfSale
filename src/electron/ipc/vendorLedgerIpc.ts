@@ -54,6 +54,7 @@ export function registerVendorLedgerIpc() {
     try {
       return vlRepo.updateVendorLedgerEntry(id, vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate);
     } catch (err: any) {
+      console.log(err.message);
       if (err.code === 'SQLITE_CONSTRAINT_CHECK' && err.message.includes('quantity >= 0')) {
         throw new Error('Cannot update to this quantity. These items have already been sold or removed from inventory, so this change would result in negative stock.');
       }

@@ -76,26 +76,12 @@ async function pushTable(table: string): Promise<PushResult> {
   return result;
 }
 
-export async function pushAll(tables: string[]): Promise<PushResult[]> {
-  const turso = getTursoClient();
+export async function pushAll(tables: string[], onTableStart?: (table: string, index: number) => void): Promise<PushResult[]> {
   const results: PushResult[] = [];
 
-  try {
-    await turso.execute({ sql: 'PRAGMA foreign_keys = OFF', args: [] });
-    console.log('[pusher] disabled FK checks on remote for push phase');
-  } catch {
-    console.warn('[pusher] could not disable FK checks on remote, push may fail on FK constraints');
-  }
-
-  for (const table of tables) {
-    results.push(await pushTable(table));
-  }
-
-  try {
-    await turso.execute({ sql: 'PRAGMA foreign_keys = ON', args: [] });
-    console.log('[pusher] re-enabled FK checks on remote');
-  } catch {
-    console.warn('[pusher] could not re-enable FK checks on remote');
+  for (let i = 0; i < tables.length; i++) {
+    onTableStart?.(tables[i], i);
+    results.push(await pushTable(tables[i]));
   }
 
   return results;

@@ -257,11 +257,44 @@ export default function VendorLedgerPage() {
   const columns = [
     { key: 'transaction_datetime', label: 'Date', render: (e: VendorLedgerEntry) => new Date(e.transaction_datetime).toLocaleDateString() },
     { key: 'vendor_name', label: 'Vendor' },
-    { key: 'product_name', label: 'Product' },
+    {
+      key: 'product_name', label: 'Product',
+      render: (e: VendorLedgerEntry) => {
+        const items = e.items
+        if (!items || items.length === 0) return e.product_name || '-'
+        return (
+          <div className="space-y-0.5">
+            {items.map((it, i) => <div key={i}>{it.name}</div>)}
+          </div>
+        )
+      },
+    },
     { key: 'description', label: 'Desc' },
     { key: 'vehicle_number', label: 'Vehicle' },
-    { key: 'quantity', label: 'Qty' },
-    { key: 'rate_per_unit', label: 'Rate', render: (e: VendorLedgerEntry) => `Rs. ${e.rate_per_unit}` },
+    {
+      key: 'quantity', label: 'Qty',
+      render: (e: VendorLedgerEntry) => {
+        const items = e.items
+        if (!items || items.length === 0) return e.quantity ?? '-'
+        return (
+          <div className="space-y-0.5">
+            {items.map((it, i) => <div key={i}>{it.quantity}</div>)}
+          </div>
+        )
+      },
+    },
+    {
+      key: 'rate_per_unit', label: 'Rate',
+      render: (e: VendorLedgerEntry) => {
+        const items = e.items
+        if (!items || items.length === 0) return `Rs. ${e.rate_per_unit ?? 0}`
+        return (
+          <div className="space-y-0.5">
+            {items.map((it, i) => <div key={i}>Rs. {it.rate}</div>)}
+          </div>
+        )
+      },
+    },
     { key: 'total_payment', label: 'Total', render: (e: VendorLedgerEntry) => `Rs. ${e.total_payment.toLocaleString()}` },
     { key: 'paid_amount', label: 'Paid', render: (e: VendorLedgerEntry) => `Rs. ${e.paid_amount.toLocaleString()}` },
     {

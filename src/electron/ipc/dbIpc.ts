@@ -1,4 +1,4 @@
-import { ipcMain, dialog, app } from 'electron';
+import { ipcMain, dialog, app, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { getDbPath, getDatabase, closeDatabase, initDatabase } from '../database.js';
@@ -14,8 +14,37 @@ export function registerDbIpc() {
       const srcPath = getDbPath();
       if (!fs.existsSync(srcPath)) return { success: false, error: 'Database file not found' };
 
+      const db = getDatabase();
+      db.pragma('wal_checkpoint(TRUNCATE)');
+
       const dir = destDir || app.getPath('desktop');
-      const destPath = path.join(dir, 'pos-backup.db');
+      
+      // 1. Find and delete old backups to avoid clutter
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (file.startsWith('pos-backup') && file.endsWith('.db')) {
+            const oldBackupPath = path.join(dir, file);
+            fs.unlinkSync(oldBackupPath);
+          }
+        }
+      } catch (err) {
+        // Ignore folder read errors
+      }
+
+      // 2. Generate a human-readable timestamp (e.g., "Jul-13-2026-9-20-PM")
+      const now = new Date();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const month = monthNames[now.getMonth()];
+      const day = String(now.getDate()).padStart(2, '0');
+      const year = now.getFullYear();
+      let hours = now.getHours();
+      const ampm = hours >= 12 ? 'PM' : 'AM';
+      hours = hours % 12 || 12; // convert 0 to 12
+      const mins = String(now.getMinutes()).padStart(2, '0');
+      
+      const dateStr = `${month}-${day}-${year}-${hours}-${mins}-${ampm}`;
+      const destPath = path.join(dir, `pos-backup-${dateStr}.db`);
 
       fs.copyFileSync(srcPath, destPath);
 
@@ -90,5 +119,39 @@ export function registerDbIpc() {
       } catch { /* ignore audit errors */ }
       return { success: false, error: String(err) };
     }
+  });
+
+  ipcMain.handle('db:nuke', async () => {
+    try {
+      const dbPath = getDbPath();
+      const syncMetaPath = path.join(app.getPath('userData'), 'sync-meta.json');
+      const errorLogPath = path.join(app.getPath('userData'), 'sync-errors.log');
+
+      closeDatabase();
+
+      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+      if (fs.existsSync(dbPath + '-wal')) fs.unlinkSync(dbPath + '-wal');
+      if (fs.existsSync(dbPath + '-shm')) fs.unlinkSync(dbPath + '-shm');
+      if (fs.existsSync(syncMetaPath)) fs.unlinkSync(syncMetaPath);
+      if (fs.existsSync(errorLogPath)) fs.unlinkSync(errorLogPath);
+
+      initDatabase();
+
+      try {
+        const user = getOwner();
+        if (user) createAuditLog('nuke', 'success', user.id, user.full_name, 'Local database wiped');
+      } catch { /* ignore audit errors */ }
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: String(err) };
+    }
+  });
+
+  ipcMain.handle('db:open-sync-log-dir', async () => {
+    const logPath = path.join(path.dirname(getDbPath()), 'sync-errors.log');
+    const dir = path.dirname(logPath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    shell.openPath(dir);
   });
 }

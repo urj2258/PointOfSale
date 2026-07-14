@@ -100,11 +100,18 @@ contextBridge.exposeInMainWorld('electron', {
     run: () => ipcRenderer.invoke('sync:run'),
     pull: () => ipcRenderer.invoke('sync:pull'),
     getLastSyncTime: () => ipcRenderer.invoke('sync:last-time'),
+    onProgress: (callback: (progress: any) => void) => {
+      const handler = (_event: any, progress: any) => callback(progress);
+      ipcRenderer.on('sync:progress', handler);
+      return () => ipcRenderer.removeListener('sync:progress', handler);
+    },
   },
   db: {
     export: (destDir?: string) => ipcRenderer.invoke('db:export', destDir),
     import: () => ipcRenderer.invoke('db:import'),
     selectExportPath: () => ipcRenderer.invoke('db:select-export-path'),
+    nuke: () => ipcRenderer.invoke('db:nuke'),
+    openSyncLogDir: () => ipcRenderer.invoke('db:open-sync-log-dir'),
   },
   auditLog: {
     list: (page?: number, limit?: number) => ipcRenderer.invoke('audit-log:list', page, limit),

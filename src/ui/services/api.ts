@@ -103,11 +103,14 @@ export const api = {
     run: () => e.sync.run(),
     pull: () => e.sync.pull(),
     getLastSyncTime: () => e.sync.getLastSyncTime(),
+    onProgress: (callback: (progress: any) => void) => e.sync.onProgress(callback),
   },
   db: {
     export: (destDir?: string) => e.db.export(destDir),
     import: () => e.db.import(),
     selectExportPath: () => e.db.selectExportPath(),
+    nuke: () => e.db.nuke(),
+    openSyncLogDir: () => e.db.openSyncLogDir(),
   },
   auditLog: {
     list: (page?: number, limit?: number) => e.auditLog.list(page, limit),

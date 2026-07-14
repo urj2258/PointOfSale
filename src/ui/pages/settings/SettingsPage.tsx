@@ -41,6 +41,15 @@ function buildFailureDesc(results: TableResult[], _direction: string): string {
   }).join('\n')
 }
 
+interface SyncProgress {
+  phase: 'push' | 'pull' | 'retry' | 'done'
+  currentTable: string
+  tableIndex: number
+  totalTables: number
+  attempt: number
+  maxAttempts: number
+}
+
 export default function SettingsPage() {
   const { currentUser, logout } = useAuth()
   const { isDarkMode, toggle } = useTheme()
@@ -57,16 +66,30 @@ export default function SettingsPage() {
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [expandedFailed, setExpandedFailed] = useState<string | null>(null)
   const [exportPath, setExportPath] = useState<string | null>(null)
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
+  const [nuking, setNuking] = useState(false)
+  const [confirmNuke, setConfirmNuke] = useState(false)
 
   useEffect(() => {
     const saved = localStorage.getItem('export_path')
     if (saved) setExportPath(saved)
   }, [])
 
+  useEffect(() => {
+    const unsubscribe = api.sync.onProgress((progress: SyncProgress) => {
+      setSyncProgress(progress)
+      if (progress.phase === 'done') {
+        setTimeout(() => setSyncProgress(null), 2000)
+      }
+    })
+    return () => unsubscribe()
+  }, [])
+
   const handleSync = async () => {
     setSyncing(true)
     setResult(null)
     setSyncError(null)
+    setSyncProgress({ phase: 'push', currentTable: '', tableIndex: 0, totalTables: 0, attempt: 1, maxAttempts: 3 })
     try {
       const res = await api.sync.run() as SyncResult
       setResult(res)
@@ -103,6 +126,7 @@ export default function SettingsPage() {
       setSyncError(String(err))
     } finally {
       setSyncing(false)
+      setSyncProgress(null)
     }
   }
 
@@ -110,6 +134,7 @@ export default function SettingsPage() {
     setPulling(true)
     setPullResult(null)
     setPullError(null)
+    setSyncProgress({ phase: 'pull', currentTable: '', tableIndex: 0, totalTables: 0, attempt: 1, maxAttempts: 3 })
     try {
       const res = await api.sync.pull() as SyncResult
       setPullResult(res)
@@ -140,6 +165,7 @@ export default function SettingsPage() {
       setPullError(String(err))
     } finally {
       setPulling(false)
+      setSyncProgress(null)
     }
   }
 
@@ -179,6 +205,10 @@ export default function SettingsPage() {
         // do nothing
       } else if (res.success) {
         toast.success('Database restored successfully. Refresh the app to see the changes.')
+        setTimeout(() =>{
+            window.location.reload()
+        },1500
+        )
       } else {
         toast.error(res.error || 'Import failed')
       }
@@ -186,6 +216,34 @@ export default function SettingsPage() {
       toast.error(String(err))
     } finally {
       setImporting(false)
+    }
+  }
+
+  const handleNuke = async () => {
+    if (!confirmNuke) {
+      setConfirmNuke(true)
+      return
+    }
+    setNuking(true)
+    setConfirmNuke(false)
+    try {
+      const res = await api.db.nuke()
+      if (res.success) {
+        toast.success('Local database wiped. Refreshing...')
+        addNotification({
+          type: 'sync_success',
+          title: 'Database Wiped',
+          desc: 'All local data has been deleted. The app will refresh.',
+          color: 'accent-orange',
+        })
+        setTimeout(() => window.location.reload(), 1500)
+      } else {
+        toast.error(res.error || 'Failed to wipe database')
+      }
+    } catch (err) {
+      toast.error(String(err))
+    } finally {
+      setNuking(false)
     }
   }
 
@@ -270,7 +328,49 @@ export default function SettingsPage() {
             className="px-4 py-2 bg-white/30 dark:bg-white/[0.06] text-brand-text-primary dark:text-white rounded-xl text-sm font-medium border border-white/30 dark:border-white/[0.1] hover:bg-white/50 dark:hover:bg-white/[0.1] transition-colors disabled:opacity-50">
             {pulling ? 'Pulling...' : 'Pull'}
           </button>
+          {result && !result.success && !syncing && (
+            <button onClick={handleSync}
+              className="px-4 py-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-colors border border-amber-500/20">
+              Retry Sync
+            </button>
+          )}
+          {pullResult && !pullResult.success && !pulling && (
+            <button onClick={handlePull}
+              className="px-4 py-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 rounded-xl text-sm font-medium hover:bg-amber-500/20 transition-colors border border-amber-500/20">
+              Retry Pull
+            </button>
+          )}
         </div>
+
+        {syncProgress && (syncing || pulling) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-brand-text-muted">
+              <span>
+                {syncProgress.phase === 'retry' && `Retrying (attempt ${syncProgress.attempt}/${syncProgress.maxAttempts})...`}
+                {syncProgress.phase === 'push' && `Pushing ${formatTableName(syncProgress.currentTable)}...`}
+                {syncProgress.phase === 'pull' && `Pulling ${formatTableName(syncProgress.currentTable)}...`}
+                {syncProgress.phase === 'done' && 'Sync complete!'}
+              </span>
+              <span>{syncProgress.tableIndex + 1}/{syncProgress.totalTables}</span>
+            </div>
+            <div className="w-full bg-gray-200 dark:bg-white/[0.1] rounded-full h-1.5">
+              <div
+                className="bg-brand-primary h-1.5 rounded-full transition-all duration-300"
+                style={{ width: `${syncProgress.totalTables > 0 ? ((syncProgress.tableIndex + 1) / syncProgress.totalTables) * 100 : 0}%` }}
+              />
+            </div>
+            {syncProgress.attempt > 1 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Retry attempt {syncProgress.attempt} of {syncProgress.maxAttempts}
+              </p>
+            )}
+          </div>
+        )}
+
+        <button onClick={() => api.db.openSyncLogDir()}
+          className="text-xs text-brand-text-muted hover:text-brand-text-primary transition-colors underline underline-offset-2">
+          Open sync error logs folder
+        </button>
 
 
       </div>
@@ -317,6 +417,40 @@ export default function SettingsPage() {
             </svg>
             Change Directory
           </button>
+        </div>
+
+        <div className="border-t border-red-500/20 pt-4 mt-2">
+          <div className="p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+            <div className="text-red-600 dark:text-red-400 mt-0.5">
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-red-800 dark:text-red-300">Danger Zone</h3>
+              <p className="text-xs text-red-700 dark:text-red-400/90 mt-1">
+                Delete <strong>all local data</strong> including vendors, customers, invoices, and inventory. This cannot be undone. Cloud data is not affected.
+              </p>
+              <div className="mt-3">
+                {confirmNuke ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium text-red-600 dark:text-red-400">Are you sure? This is irreversible.</span>
+                    <button onClick={handleNuke} disabled={nuking}
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-bold hover:bg-red-700 transition-colors disabled:opacity-50">
+                      {nuking ? 'Deleting...' : 'Yes, Delete Everything'}
+                    </button>
+                    <button onClick={() => setConfirmNuke(false)}
+                      className="px-3 py-1.5 bg-white/30 dark:bg-white/[0.06] text-brand-text-muted rounded-lg text-xs font-medium hover:bg-white/50 dark:hover:bg-white/[0.1] transition-colors border border-white/30 dark:border-white/[0.1]">
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button onClick={handleNuke} disabled={nuking}
+                    className="px-3 py-1.5 bg-red-500/10 text-red-600 dark:text-red-400 rounded-lg text-xs font-medium hover:bg-red-500/20 transition-colors border border-red-500/20 disabled:opacity-50">
+                    Delete Local Database
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
 
 

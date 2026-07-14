@@ -4,6 +4,17 @@ import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 import { insertCustomerInTx } from './customerRepository.js';
 
+function itemsAreEqual(
+  oldItems: { product_id: string; quantity: number }[],
+  newItems: { productId: string; quantity: number; ratePerUnit: number }[]
+): boolean {
+  if (oldItems.length !== newItems.length) return false;
+  const normalize = (arr: { id: string; qty: number }[]) =>
+    [...arr].sort((a, b) => a.id.localeCompare(b.id)).map(x => `${x.id}:${x.qty}`);
+  const oldNorm = normalize(oldItems.map(i => ({ id: i.product_id, qty: i.quantity })));
+  const newNorm = normalize(newItems.map(i => ({ id: i.productId, qty: i.quantity })));
+  return oldNorm.join('|') === newNorm.join('|');
+}
 
 export interface CustomerLedgerRow {
   id: string
@@ -195,46 +206,42 @@ export function updateMultiItemSale(
     });
 
     if (existing.invoice_id) {
-      // 1. Load old items so we can restore their inventory contribution
       const oldItems = db.prepare(
         `SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ? AND deleted_at IS NULL`
       ).all(existing.invoice_id) as { product_id: string; quantity: number }[];
 
-      // 2. Restore old stock (customer sales SUBTRACT stock, so restore = ADD back)
-      for (const old of oldItems) {
-        db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
-          .run(old.quantity, now, old.product_id);
-      }
+      if (!itemsAreEqual(oldItems, items)) {
+        for (const old of oldItems) {
+          db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
+            .run(old.quantity, now, old.product_id);
+        }
 
-      // 3. Soft-delete ALL existing items for this invoice
-      db.prepare(
-        'UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL'
-      ).run(now, now, existing.invoice_id);
+        db.prepare(
+          'UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL'
+        ).run(now, now, existing.invoice_id);
 
-      // 4. Insert fresh items and deduct new stock
-      const checkStock = db.prepare('SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL');
-      
-      for (const item of items) {
-        const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
-        if (!row) throw new Error(`Product not found in inventory (id: ${item.productId})`);
-        
-        // Note: quantity here includes the old stock we just restored (since we did UPDATE inventory SET quantity = quantity + old)
-        if (item.quantity > row.quantity) {
-          throw new Error(`Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`);
+        const checkStock = db.prepare('SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL');
+
+        for (const item of items) {
+          const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
+          if (!row) throw new Error(`Product not found in inventory (id: ${item.productId})`);
+
+          if (item.quantity > row.quantity) {
+            throw new Error(`Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`);
+          }
+        }
+
+        for (const item of items) {
+          const itemId = crypto.randomUUID();
+          db.prepare(
+            `INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(itemId, existing.invoice_id, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+          const result = db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
+            .run(item.quantity, now, item.productId);
+          if (result.changes === 0) throw new Error('Product not found in inventory');
         }
       }
 
-      for (const item of items) {
-        const itemId = crypto.randomUUID();
-        db.prepare(
-          `INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(itemId, existing.invoice_id, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
-        const result = db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
-          .run(item.quantity, now, item.productId);
-        if (result.changes === 0) throw new Error('Product not found in inventory');
-      }
-
-      // 5. Update invoice header totals, issue date, due date
       const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
       const issueDate = transactionDatetime.split('T')[0];
       const resolvedDueDate = dueDate || issueDate;

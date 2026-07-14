@@ -61,7 +61,6 @@ export const SYNC_TABLE_ORDER: string[] = [
   'inventory',
   'expense_categories',
   'day_closing_reports',
-  'users',
   'vendor_invoices',
   'invoices',
   'expenses',
@@ -266,7 +265,7 @@ function createTables(db: Database.Database): void {
 
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
-      action TEXT NOT NULL CHECK (action IN ('sync', 'pull', 'export', 'import')),
+      action TEXT NOT NULL CHECK (action IN ('sync', 'pull', 'export', 'import', 'nuke')),
       status TEXT NOT NULL CHECK (status IN ('success', 'failure', 'partial')),
       user_id TEXT NOT NULL,
       user_name TEXT NOT NULL,
@@ -463,6 +462,34 @@ function migrateSchema(db: Database.Database): void {
     if (!alCols.includes('synced')) {
       addColumn('audit_logs', 'synced INTEGER NOT NULL DEFAULT 0');
     }
+
+    // Recreate audit_logs with updated CHECK constraint to include 'nuke'
+    db.pragma('foreign_keys = OFF');
+    db.transaction(() => {
+      db.exec(`
+        CREATE TABLE audit_logs_new (
+          id TEXT PRIMARY KEY,
+          action TEXT NOT NULL CHECK (action IN ('sync', 'pull', 'export', 'import', 'nuke')),
+          status TEXT NOT NULL CHECK (status IN ('success', 'failure', 'partial')),
+          user_id TEXT NOT NULL,
+          user_name TEXT NOT NULL,
+          details TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          deleted_at TEXT NULL,
+          synced INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        )
+      `);
+      db.exec(`
+        INSERT INTO audit_logs_new (id, action, status, user_id, user_name, details, created_at, updated_at, deleted_at, synced)
+        SELECT id, action, status, user_id, user_name, details, created_at, updated_at, deleted_at, synced
+        FROM audit_logs
+      `);
+      db.exec('DROP TABLE audit_logs');
+      db.exec('ALTER TABLE audit_logs_new RENAME TO audit_logs');
+    })();
+    db.pragma('foreign_keys = ON');
   }
 }
 
