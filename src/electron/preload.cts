@@ -88,6 +88,9 @@ contextBridge.exposeInMainWorld('electron', {
     list: (page?: number, limit?: number) => ipcRenderer.invoke('day-closing:list', page, limit),
     get: (date: string) => ipcRenderer.invoke('day-closing:get', date),
     generate: (businessDate: string) => ipcRenderer.invoke('day-closing:generate', businessDate),
+    exportExcel: (businessDate: string) => ipcRenderer.invoke('day-closing:export-excel', businessDate),
+    getExportDir: () => ipcRenderer.invoke('day-closing:get-export-dir'),
+    chooseExportDir: () => ipcRenderer.invoke('day-closing:choose-export-dir'),
   },
   dashboard: {
     stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => ipcRenderer.invoke('dashboard:stats', threshold, period, startDate, endDate),

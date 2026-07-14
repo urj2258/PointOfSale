@@ -12,6 +12,8 @@ export default function DayClosingPage() {
   const [message, setMessage] = useState('')
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDate, setPendingDate] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [exportDir, setExportDir] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -21,6 +23,10 @@ export default function DayClosingPage() {
   }, [page])
 
   useEffect(() => { load() }, [load])
+
+  useEffect(() => {
+    api.dayClosing.getExportDir().then(dir => setExportDir(dir))
+  }, [])
 
   const doGenerate = async (date: string) => {
     setGenerating(true)
@@ -38,7 +44,8 @@ export default function DayClosingPage() {
   }
 
   const handleGenerate = async () => {
-    const today = new Date().toISOString().split('T')[0]
+    const n = new Date()
+    const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
     const existing = await api.dayClosing.get(today)
     if (existing) {
       setPendingDate(today)
@@ -46,6 +53,33 @@ export default function DayClosingPage() {
       return
     }
     doGenerate(today)
+  }
+
+  const handleExportExcel = async () => {
+    const n = new Date()
+    const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+    setExporting(true)
+    setMessage('')
+    try {
+      const res = await api.dayClosing.exportExcel(today)
+      if (res.canceled) return
+      if (res.success) {
+        setMessage(`Report exported to ${res.path}`)
+        const dir = await api.dayClosing.getExportDir()
+        setExportDir(dir)
+      }
+    } catch {
+      setMessage('Failed to export Excel')
+    }
+    setExporting(false)
+  }
+
+  const handleChangeDir = async () => {
+    const res = await api.dayClosing.chooseExportDir()
+    if (res.success) {
+      setExportDir(res.path)
+      setMessage(`Export directory set to ${res.path}`)
+    }
   }
 
   const columns = [
@@ -66,10 +100,25 @@ export default function DayClosingPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Day Closing</h1>
-        <button onClick={handleGenerate} disabled={generating}
-          className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
-          {generating ? 'Generating...' : 'Generate Today\'s Report'}
-        </button>
+        <div className="flex items-center gap-3">
+          {exportDir && (
+            <span className="text-xs text-brand-text-muted max-w-[200px] truncate" title={exportDir}>
+              {exportDir.split(/[/\\]/).pop()}
+            </span>
+          )}
+          <button onClick={handleChangeDir}
+            className="px-3 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-white/30 dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
+            {exportDir ? 'Change Folder' : 'Set Folder'}
+          </button>
+          <button onClick={handleExportExcel} disabled={exporting}
+            className="px-4 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white border border-white/30 dark:border-white/[0.1] rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            {exporting ? 'Exporting...' : 'Export Excel'}
+          </button>
+          <button onClick={handleGenerate} disabled={generating}
+            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            {generating ? 'Generating...' : 'Generate Today\'s Report'}
+          </button>
+        </div>
       </div>
 
       {message && (

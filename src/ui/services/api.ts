@@ -91,6 +91,9 @@ export const api = {
     list: (page?: number, limit?: number) => e.dayClosing.list(page, limit),
     get: (date: string) => e.dayClosing.get(date),
     generate: (businessDate: string) => e.dayClosing.generate(businessDate),
+    exportExcel: (businessDate: string) => e.dayClosing.exportExcel(businessDate),
+    getExportDir: () => e.dayClosing.getExportDir(),
+    chooseExportDir: () => e.dayClosing.chooseExportDir(),
   },
   dashboard: {
     stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => e.dashboard.stats(threshold, period, startDate, endDate),
