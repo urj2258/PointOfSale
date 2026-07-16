@@ -38,6 +38,7 @@ export const api = {
     delete: (id: string) => e.vendorLedger.delete(id),
     pending: (vendorId: string) => e.vendorLedger.pending(vendorId),
     linkToInvoice: (entryIds: string[], invoiceId: string) => e.vendorLedger.linkToInvoice(entryIds, invoiceId),
+    exportExcel: (vendorId: string, fromDate?: string, toDate?: string) => e.vendorLedger.exportExcel(vendorId, fromDate, toDate),
   },
     customerLedger: {
       list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.customerLedger.list(customerId, dateFrom, dateTo, page, limit),
@@ -50,6 +51,7 @@ export const api = {
       delete: (id: string) => e.customerLedger.delete(id),
       pending: (customerId: string) => e.customerLedger.pending(customerId),
       linkToInvoice: (entryIds: string[], invoiceId: string) => e.customerLedger.linkToInvoice(entryIds, invoiceId),
+      exportExcel: (customerId: string, fromDate?: string, toDate?: string) => e.customerLedger.exportExcel(customerId, fromDate, toDate),
     },
 
   vendorInvoices: {
@@ -94,6 +96,7 @@ export const api = {
     exportExcel: (businessDate: string) => e.dayClosing.exportExcel(businessDate),
     getExportDir: () => e.dayClosing.getExportDir(),
     chooseExportDir: () => e.dayClosing.chooseExportDir(),
+    exportSummaryExcel: (fromDate?: string, toDate?: string) => e.dayClosing.exportSummaryExcel(fromDate, toDate),
   },
   dashboard: {
     stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => e.dashboard.stats(threshold, period, startDate, endDate),

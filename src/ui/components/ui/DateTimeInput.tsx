@@ -68,6 +68,7 @@ export default function DateTimeInput({ value, onChange, placeholder = 'dd/mm/yy
       placeholderText={placeholder}
       className={className}
       customInput={<CustomInput className={className} />}
+      portalId="root-portal"
     />
   )
 }

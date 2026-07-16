@@ -207,6 +207,10 @@ body::-webkit-scrollbar {
 }
 
 /* ── react-datepicker shared defaults ── */
+.react-datepicker-popper {
+  z-index: 150 !important;
+}
+
 .react-datepicker {
   font-family: inherit !important;
   border-radius: 16px !important;

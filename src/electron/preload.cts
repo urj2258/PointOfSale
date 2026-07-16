@@ -38,6 +38,7 @@ contextBridge.exposeInMainWorld('electron', {
     delete: (id: string) => ipcRenderer.invoke('vendor-ledger:delete', id),
     pending: (vendorId: string) => ipcRenderer.invoke('vendor-ledger:pending', vendorId),
     linkToInvoice: (entryIds: string[], invoiceId: string) => ipcRenderer.invoke('vendor-ledger:link-to-invoice', entryIds, invoiceId),
+    exportExcel: (vendorId: string, fromDate?: string, toDate?: string) => ipcRenderer.invoke('vendor-ledger:export-excel', vendorId, fromDate, toDate),
   },
     customerLedger: {
       list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => ipcRenderer.invoke('customer-ledger:list', customerId, dateFrom, dateTo, page, limit),
@@ -47,6 +48,7 @@ contextBridge.exposeInMainWorld('electron', {
       delete: (id: string) => ipcRenderer.invoke('customer-ledger:delete', id),
       pending: (customerId: string) => ipcRenderer.invoke('customer-ledger:pending', customerId),
       linkToInvoice: (entryIds: string[], invoiceId: string) => ipcRenderer.invoke('customer-ledger:link-to-invoice', entryIds, invoiceId),
+      exportExcel: (customerId: string, fromDate?: string, toDate?: string) => ipcRenderer.invoke('customer-ledger:export-excel', customerId, fromDate, toDate),
     },
 
   vendorInvoices: {
@@ -91,6 +93,7 @@ contextBridge.exposeInMainWorld('electron', {
     exportExcel: (businessDate: string) => ipcRenderer.invoke('day-closing:export-excel', businessDate),
     getExportDir: () => ipcRenderer.invoke('day-closing:get-export-dir'),
     chooseExportDir: () => ipcRenderer.invoke('day-closing:choose-export-dir'),
+    exportSummaryExcel: (fromDate?: string, toDate?: string) => ipcRenderer.invoke('day-closing:export-summary-excel', fromDate, toDate),
   },
   dashboard: {
     stats: (threshold?: number, period?: string, startDate?: string, endDate?: string) => ipcRenderer.invoke('dashboard:stats', threshold, period, startDate, endDate),

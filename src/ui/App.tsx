@@ -9,7 +9,9 @@ import LoginPage from './pages/LoginPage'
 
 import Dashboard from './pages/Dashboard'
 import VendorsPage from './pages/vendors/VendorsPage'
+import VendorDetailPage from './pages/vendors/VendorDetailPage'
 import CustomersPage from './pages/customers/CustomersPage'
+import CustomerDetailPage from './pages/customers/CustomerDetailPage'
 import InventoryPage from './pages/inventory/InventoryPage'
 import VendorLedgerPage from './pages/vendor-ledger/VendorLedgerPage'
 import CustomerLedgerPage from './pages/customer-ledger/CustomerLedgerPage'
@@ -60,7 +62,9 @@ function App() {
         <Route element={<Layout />}>
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/vendors" element={<VendorsPage />} />
+          <Route path="/vendors/:vendorId" element={<VendorDetailPage />} />
           <Route path="/customers" element={<CustomersPage />} />
+          <Route path="/customers/:customerId" element={<CustomerDetailPage />} />
           <Route path="/inventory" element={<InventoryPage />} />
           <Route path="/vendor-ledger" element={<VendorLedgerPage />} />
           <Route path="/customer-ledger" element={<CustomerLedgerPage />} />

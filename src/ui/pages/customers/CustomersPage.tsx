@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../../services/api'
 import type { Customer, PaginatedResult } from '../../types'
 import DataTable from '../../components/ui/DataTable'
@@ -57,6 +58,7 @@ function isFormValid(form: Form): boolean {
 }
 
 export default function CustomersPage() {
+  const navigate = useNavigate()
   const [data, setData] = useState<PaginatedResult<Customer> | null>(null)
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -175,7 +177,14 @@ export default function CustomersPage() {
       <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search customers..." />
 
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
-        <DataTable columns={columns} data={data?.data ?? []} onEdit={openEdit} onDelete={handleDelete} loading={loading} />
+        <DataTable 
+          columns={columns} 
+          data={data?.data ?? []} 
+          onEdit={openEdit} 
+          onDelete={handleDelete} 
+          onRowClick={(item) => navigate(`/customers/${item.id}`)}
+          loading={loading} 
+        />
         {data && <Pagination page={data.page} total={data.total} limit={20} onChange={setPage} />}
       </div>
 

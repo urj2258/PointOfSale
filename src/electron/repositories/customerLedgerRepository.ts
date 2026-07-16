@@ -3,6 +3,15 @@ import { getDatabase } from '../database.js';
 import { updateRow, softDeleteRow } from '../dbHelpers.js';
 import crypto from 'crypto';
 import { insertCustomerInTx } from './customerRepository.js';
+import ExcelJS from 'exceljs';
+import path from 'path';
+
+const C = {
+  dark: 'FF111827', blue: 'FF2563EB', bluePale: 'FFDBEAFE',
+  green: 'FF059669', red: 'FFDC2626',
+  greenBg: 'FFD1FAE5', redBg: 'FFFEE2E2', grayBg: 'FFF9FAFB',
+  border: 'FFE5E7EB', white: 'FFFFFFFF', muted: 'FF6B7280',
+};
 
 function itemsAreEqual(
   oldItems: { product_id: string; quantity: number }[],
@@ -325,4 +334,146 @@ export function linkEntriesToInvoice(entryIds: string[], invoiceId: string) {
     syncCustomerInvoiceFromLedger(db, invoiceId, now);
   });
   transaction();
+}
+
+export async function exportCustomerLedgerExcel(customerId: string, fromDate?: string, toDate?: string, exportDir?: string): Promise<{ buffer: Buffer; filePath: string }> {
+  const db = getDatabase();
+
+  let where = 'WHERE cl.deleted_at IS NULL AND cl.customer_id = ?';
+  const params: unknown[] = [customerId];
+
+  if (fromDate) {
+    where += ' AND cl.transaction_datetime >= ?';
+    params.push(fromDate);
+  }
+  if (toDate) {
+    where += ' AND cl.transaction_datetime <= ?';
+    params.push(toDate);
+  }
+
+  const rows = db.prepare(`
+    SELECT cl.*, c.name as customer_name, inv.invoice_number
+    FROM customer_ledger cl
+    LEFT JOIN customers c ON c.id = cl.customer_id
+    LEFT JOIN invoices inv ON inv.id = cl.invoice_id
+    ${where}
+    ORDER BY cl.transaction_datetime ASC
+  `).all(...params) as (CustomerLedgerRow & { customer_name: string; invoice_number: string | null })[];
+
+  if (rows.length === 0) {
+    throw new Error('No entries found in this date range');
+  }
+
+  const customerName = rows[0].customer_name || 'Customer';
+
+  const safeFrom = fromDate ? fromDate.replace(/[^0-9-]/g, '') : '';
+  const safeTo = toDate ? toDate.replace(/[^0-9-]/g, '') : '';
+  const dateSuffix = safeFrom && safeTo ? `_${safeFrom}_to_${safeTo}` : '';
+  const safeCustomerName = customerName.replace(/[^a-zA-Z0-9_-]/g, '_');
+  const fileName = `Ledger_${safeCustomerName}${dateSuffix}.xlsx`;
+  const filePath = path.join(exportDir || '', fileName);
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'POS System';
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet('Customer Ledger', {
+    properties: { defaultRowHeight: 25 }
+  });
+
+  sheet.columns = [
+    { header: 'Date', key: 'date', width: 22 },
+    { header: 'Invoice #', key: 'invoice', width: 18 },
+    { header: 'Description', key: 'desc', width: 35 },
+    { header: 'Total Payment', key: 'total', width: 20 },
+    { header: 'Paid Amount', key: 'paid', width: 20 },
+    { header: 'Balance', key: 'balance', width: 20 },
+  ];
+
+  sheet.spliceRows(1, 0, []);
+
+  sheet.mergeCells('A1:F1');
+  const title = sheet.getCell('A1');
+  title.value = `Customer Ledger Report`;
+  title.font = { name: 'Inter', size: 16, bold: true, color: { argb: C.white } };
+  title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
+  title.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  sheet.mergeCells('A2:F2');
+  const subtitle = sheet.getCell('A2');
+  if (fromDate && toDate) {
+    subtitle.value = `${customerName} | ${fromDate} → ${toDate}`;
+  } else {
+    subtitle.value = customerName;
+  }
+  subtitle.font = { name: 'Inter', size: 12, bold: true, color: { argb: C.white } };
+  subtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } };
+  subtitle.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Empty row for spacing
+  sheet.addRow([]);
+
+  const headerRowObj = sheet.addRow(['Date', 'Invoice #', 'Description', 'Total Payment', 'Paid Amount', 'Remaining Balance']);
+  headerRowObj.font = { name: 'Inter', size: 11, color: { argb: C.muted } };
+  headerRowObj.alignment = { vertical: 'middle', horizontal: 'left' };
+  ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+    headerRowObj.getCell(col).border = {
+      bottom: { style: 'thin', color: { argb: C.border } }
+    };
+  });
+  headerRowObj.getCell('D').alignment = { horizontal: 'right' };
+  headerRowObj.getCell('E').alignment = { horizontal: 'right' };
+  headerRowObj.getCell('F').alignment = { horizontal: 'right' };
+
+  const numFmt = '"Rs."#,##0.00';
+  let totalPurchases = 0;
+  let totalPaid = 0;
+
+  for (const row of rows) {
+    const sheetRow = sheet.addRow({
+      date: row.transaction_datetime,
+      invoice: row.invoice_number || '-',
+      desc: row.description || '-',
+      total: row.total_payment,
+      paid: row.paid_amount,
+      balance: row.remaining_balance,
+    });
+    
+    totalPurchases += row.total_payment;
+    totalPaid += row.paid_amount;
+
+    sheetRow.font = { name: 'Inter', size: 10, color: { argb: C.dark } };
+    sheetRow.getCell('total').numFmt = numFmt;
+    sheetRow.getCell('paid').numFmt = numFmt;
+    sheetRow.getCell('balance').numFmt = numFmt;
+    sheetRow.alignment = { vertical: 'middle' };
+    sheetRow.getCell('date').alignment = { horizontal: 'left' };
+
+    ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+      sheetRow.getCell(col).border = { bottom: { style: 'thin', color: { argb: C.border } } };
+    });
+  }
+
+  sheet.addRow([]);
+  const totalsRow = sheet.addRow({
+    date: 'TOTAL',
+    invoice: '',
+    desc: '',
+    total: totalPurchases,
+    paid: totalPaid,
+    balance: ''
+  });
+  
+  totalsRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
+  totalsRow.getCell('total').numFmt = numFmt;
+  totalsRow.getCell('paid').numFmt = numFmt;
+  totalsRow.alignment = { vertical: 'middle', horizontal: 'right' };
+  totalsRow.getCell('date').alignment = { horizontal: 'left' };
+  
+  ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+    totalsRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.bluePale } };
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer() as unknown as Buffer;
+  return { buffer, filePath };
 }

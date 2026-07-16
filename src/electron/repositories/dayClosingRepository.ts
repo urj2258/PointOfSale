@@ -18,6 +18,8 @@ export interface DayClosingRow {
 }
 
 const EXPORT_FILE = 'DayClosing_Report.xlsx';
+// Separate file for the summary export so it never overwrites the detailed report
+const SUMMARY_FILE = 'DayClosing_Summary.xlsx';
 const CONFIG_FILE = 'export-config.json';
 
 function getConfigPath() {
@@ -41,6 +43,19 @@ export function setExportDir(dir: string) {
 export function getExportPath(): string | null {
   const dir = getExportDir();
   return dir ? path.join(dir, EXPORT_FILE) : null;
+}
+
+export function getSummaryExportPath(fromDate?: string, toDate?: string): string | null {
+  const dir = getExportDir();
+  if (!dir) return null;
+
+  if (fromDate && toDate) {
+    const safeFrom = fromDate.replace(/[^0-9-]/g, '');
+    const safeTo = toDate.replace(/[^0-9-]/g, '');
+    return path.join(dir, `DayClosing_Summary_${safeFrom}_to_${safeTo}.xlsx`);
+  }
+
+  return path.join(dir, SUMMARY_FILE);
 }
 
 export function getDayClosings(page = 1, limit = 20) {
@@ -303,6 +318,179 @@ export async function exportDayClosingExcel(businessDate: string): Promise<{ buf
   }
   if (expenses.length > 0) {
     addTotalsRow(['', 'TOTAL', '', totalExpenses]);
+  }
+
+  const buffer = await workbook.xlsx.writeBuffer() as unknown as Buffer;
+  return { buffer, filePath };
+}
+
+/**
+ * Build a summary workbook: one row per day_closing_reports entry.
+ * fromDate / toDate are ISO date strings that filter on created_at.
+ * When both are omitted the entire table is exported.
+ */
+export async function exportDayClosingSummaryExcel(
+  fromDate?: string,
+  toDate?: string,
+): Promise<{ buffer: Buffer; filePath: string }> {
+  const db = getDatabase();
+
+  // Build the WHERE clause depending on which dates were supplied
+  let rows: DayClosingRow[];
+  if (fromDate && toDate) {
+    rows = db.prepare(
+      `SELECT * FROM day_closing_reports
+       WHERE business_date >= ? AND business_date <= ?
+       ORDER BY business_date DESC`,
+    ).all(fromDate, toDate) as DayClosingRow[];
+  } else if (fromDate) {
+    rows = db.prepare(
+      `SELECT * FROM day_closing_reports
+       WHERE business_date >= ?
+       ORDER BY business_date DESC`,
+    ).all(fromDate) as DayClosingRow[];
+  } else if (toDate) {
+    rows = db.prepare(
+      `SELECT * FROM day_closing_reports
+       WHERE business_date <= ?
+       ORDER BY business_date DESC`,
+    ).all(toDate) as DayClosingRow[];
+  } else {
+    // No filter — full table export
+    rows = db.prepare(
+      `SELECT * FROM day_closing_reports ORDER BY business_date DESC`,
+    ).all() as DayClosingRow[];
+  }
+
+  if (rows.length === 0) {
+    throw new Error('Invalid range! No records found for the selected dates.');
+  }
+
+  const filePath = getSummaryExportPath(fromDate, toDate)!;
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = 'POS System';
+  workbook.created = new Date();
+
+  const ws = workbook.addWorksheet('Day Closing Summary', {
+    properties: { tabColor: { argb: C.blue } },
+  });
+
+  // Column widths to match the 7-column layout used in the detailed report
+  ws.columns = [
+    { width: 3 },   // gutter
+    { width: 18 },  // Business Date
+    { width: 24 },  // Created At
+    { width: 24 },  // Updated At
+    { width: 18 },  // Total Sales
+    { width: 18 },  // Total Purchases
+    { width: 18 },  // Total Expenses
+    { width: 18 },  // Net Profit
+  ];
+
+  const bdr: Partial<ExcelJS.Borders> = {
+    top:    { style: 'thin', color: { argb: C.border } },
+    bottom: { style: 'thin', color: { argb: C.border } },
+    left:   { style: 'thin', color: { argb: C.border } },
+    right:  { style: 'thin', color: { argb: C.border } },
+  };
+
+  const fillBg = (color: string): ExcelJS.Fill =>
+    ({ type: 'pattern', pattern: 'solid', fgColor: { argb: color } });
+
+  const fillRow = (r: number, color: string, cols = 8) => {
+    for (let c = 1; c <= cols; c++) ws.getCell(r, c).fill = fillBg(color);
+  };
+
+  let row = 1;
+
+  // ── Title banner (matches the existing detailed report style) ──
+  ws.mergeCells(row, 1, row, 8);
+  ws.getCell(row, 1).value = 'Day Closing Summary Report';
+  ws.getCell(row, 1).font = { bold: true, size: 18, color: { argb: C.white } };
+  ws.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(row).height = 42;
+  fillRow(row, C.dark);
+  row++;
+
+  // Sub-title: show the date range that was applied, or "All Records"
+  const rangeLabel =
+    fromDate && toDate ? `${fromDate}  →  ${toDate}`
+    : fromDate         ? `From ${fromDate}`
+    : toDate           ? `Up to ${toDate}`
+    :                    'All Records';
+  ws.mergeCells(row, 1, row, 8);
+  ws.getCell(row, 1).value = rangeLabel;
+  ws.getCell(row, 1).font = { bold: true, size: 13, color: { argb: C.white } };
+  ws.getCell(row, 1).alignment = { horizontal: 'center', vertical: 'middle' };
+  ws.getRow(row).height = 28;
+  fillRow(row, C.blue);
+  row += 2;
+
+  // ── Column header row ──
+  const headers = [
+    'Business Date', 'Created At', 'Updated At',
+    'Total Sales', 'Total Purchases', 'Total Expenses', 'Net Profit',
+  ];
+  headers.forEach((h, i) => {
+    const cell = ws.getCell(row, i + 2);
+    cell.value = h;
+    cell.font = { bold: true, size: 10, color: { argb: C.muted } };
+    cell.fill = fillBg(C.grayBg);
+    cell.border = bdr;
+    cell.alignment = { vertical: 'middle' };
+  });
+  ws.getRow(row).height = 22;
+  row++;
+
+  // ── Data rows ──
+  let grandSales = 0;
+  let grandPurchases = 0;
+  let grandExpenses = 0;
+
+  for (const r of rows) {
+    const net = r.total_sales - r.total_purchases - r.total_expenses;
+    grandSales      += r.total_sales;
+    grandPurchases  += r.total_purchases;
+    grandExpenses   += r.total_expenses;
+
+    const values = [
+      r.business_date,
+      r.created_at.replace('T', ' '),
+      r.updated_at.replace('T', ' '),
+      r.total_sales,
+      r.total_purchases,
+      r.total_expenses,
+      net,
+    ];
+
+    values.forEach((v, i) => {
+      const cell = ws.getCell(row, i + 2);
+      cell.value = v;
+      cell.border = bdr;
+      // Columns 4-7 (i = 3..6) are currency values
+      if (i >= 3) cell.numFmt = '"Rs. "#,##0';
+      // Colour-code the Net Profit cell green/red
+      if (i === 6) {
+        cell.font = { bold: true, color: { argb: (v as number) >= 0 ? C.green : C.red } };
+      }
+    });
+    row++;
+  }
+
+  // ── Totals row ──
+  if (rows.length > 0) {
+    const grandNet = grandSales - grandPurchases - grandExpenses;
+    const totals = ['', 'TOTAL', '', grandSales, grandPurchases, grandExpenses, grandNet];
+    totals.forEach((v, i) => {
+      const cell = ws.getCell(row, i + 2);
+      cell.value = v;
+      cell.font = { bold: true, size: 11 };
+      cell.border = bdr;
+      cell.fill = fillBg(C.bluePale);
+      if (i >= 3) cell.numFmt = '"Rs. "#,##0';
+    });
+    ws.getRow(row).height = 24;
   }
 
   const buffer = await workbook.xlsx.writeBuffer() as unknown as Buffer;

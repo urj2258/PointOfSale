@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
+import fs from 'fs';
+import * as dayClosingRepo from '../repositories/dayClosingRepository.js';
 import * as vlRepo from '../repositories/vendorLedgerRepository.js';
 import { assertNonEmptyString, assertOptionalString, assertPositiveNumber, assertNonNegativeNumber, assertValidDateString, assertName, assertPhone, assertAddress, handleIpcError } from '../validation.js';
 
@@ -130,6 +132,31 @@ export function registerVendorLedgerIpc() {
           dueDate: purchaseData.dueDate || undefined,
         }
       );
+    } catch (err) {
+      return handleIpcError(err);
+    }
+  });
+  ipcMain.handle('vendor-ledger:export-excel', async (_e, vendorId: string, fromDate?: string, toDate?: string) => {
+    try {
+      assertNonEmptyString(vendorId, 'vendor_id');
+      if (fromDate) assertValidDateString(fromDate, 'from_date');
+      if (toDate) assertValidDateString(toDate, 'to_date');
+
+      let exportDir = dayClosingRepo.getExportDir();
+      if (!exportDir) {
+        const win = BrowserWindow.fromWebContents(_e.sender) || BrowserWindow.getAllWindows()[0];
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+          title: 'Choose Directory for Vendor Ledger Export',
+          properties: ['openDirectory', 'createDirectory'],
+        });
+        if (canceled || filePaths.length === 0) return { success: false, canceled: true };
+        exportDir = filePaths[0];
+        dayClosingRepo.setExportDir(exportDir);
+      }
+
+      const { buffer, filePath } = await vlRepo.exportVendorLedgerExcel(vendorId, fromDate, toDate, exportDir);
+      fs.writeFileSync(filePath, buffer);
+      return { success: true, path: filePath };
     } catch (err) {
       return handleIpcError(err);
     }

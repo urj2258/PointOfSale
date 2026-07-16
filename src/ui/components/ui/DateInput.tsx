@@ -54,6 +54,7 @@ export default function DateInput({ value, onChange, placeholder = 'dd/mm/yyyy',
       minDate={minDate}
       className={className}
       customInput={<CustomInput className={className} />}
+      portalId="root-portal"
     />
   )
 }

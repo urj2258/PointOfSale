@@ -95,5 +95,30 @@ export function registerCustomerLedgerIpc() {
       return handleIpcError(err);
     }
   });
-}
+  ipcMain.handle('customer-ledger:export-excel', async (_e, customerId: string, fromDate?: string, toDate?: string) => {
+    try {
+      assertNonEmptyString(customerId, 'customer_id');
+      if (fromDate) assertValidDateString(fromDate, 'fromDate');
+      if (toDate) assertValidDateString(toDate, 'toDate');
 
+      const { buffer, filePath } = await clRepo.exportCustomerLedgerExcel(customerId, fromDate, toDate);
+      
+      const { canceled, filePath: savePath } = await import('electron').then(e => e.dialog.showSaveDialog({
+        title: 'Export Customer Ledger',
+        defaultPath: filePath,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
+      }));
+
+      if (canceled || !savePath) return { canceled: true };
+      
+      const fs = await import('fs');
+      fs.writeFileSync(savePath, buffer);
+      return { success: true, path: savePath };
+    } catch (err: any) {
+      if (err.message === 'No entries found in this date range') {
+        return { error: err.message };
+      }
+      return handleIpcError(err);
+    }
+  });
+}
