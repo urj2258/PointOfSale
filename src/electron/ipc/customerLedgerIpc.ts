@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
+import fs from 'fs';
+import * as dayClosingRepo from '../repositories/dayClosingRepository.js';
 import * as clRepo from '../repositories/customerLedgerRepository.js';
 import { assertNonEmptyString, assertOptionalString, assertPositiveNumber, assertNonNegativeNumber, assertValidDateString, assertName, assertPhone, assertAddress, handleIpcError } from '../validation.js';
 
@@ -101,19 +103,21 @@ export function registerCustomerLedgerIpc() {
       if (fromDate) assertValidDateString(fromDate, 'fromDate');
       if (toDate) assertValidDateString(toDate, 'toDate');
 
-      const { buffer, filePath } = await clRepo.exportCustomerLedgerExcel(customerId, fromDate, toDate);
-      
-      const { canceled, filePath: savePath } = await import('electron').then(e => e.dialog.showSaveDialog({
-        title: 'Export Customer Ledger',
-        defaultPath: filePath,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }]
-      }));
+      let exportDir = dayClosingRepo.getExportDir();
+      if (!exportDir) {
+        const win = BrowserWindow.fromWebContents(_e.sender) || BrowserWindow.getAllWindows()[0];
+        const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+          title: 'Choose Directory for Customer Ledger Export',
+          properties: ['openDirectory', 'createDirectory'],
+        });
+        if (canceled || filePaths.length === 0) return { success: false, canceled: true };
+        exportDir = filePaths[0];
+        dayClosingRepo.setExportDir(exportDir);
+      }
 
-      if (canceled || !savePath) return { canceled: true };
-      
-      const fs = await import('fs');
-      fs.writeFileSync(savePath, buffer);
-      return { success: true, path: savePath };
+      const { buffer, filePath } = await clRepo.exportCustomerLedgerExcel(customerId, fromDate, toDate, exportDir);
+      fs.writeFileSync(filePath, buffer);
+      return { success: true, path: filePath };
     } catch (err: any) {
       if (err.message === 'No entries found in this date range') {
         return { error: err.message };

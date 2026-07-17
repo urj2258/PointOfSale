@@ -5,6 +5,11 @@ import { api } from '../../services/api'
 import { useTheme } from '../../hooks/useTheme'
 import toast from 'react-hot-toast'
 
+// ── Plug-and-play feature flag ──────────────────────────────────
+// Set to `true` to re-enable the Backup & Sync section in the UI.
+const ENABLE_SYNC_SECTION = false
+// ────────────────────────────────────────────────────────────────
+
 interface FailedDetail {
   id: string
   error: string
@@ -274,6 +279,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
+      {ENABLE_SYNC_SECTION && (
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Backup &amp; Sync</h2>
         <p className="text-sm text-brand-text-muted">Sync local data to the cloud database.</p>
@@ -374,11 +380,13 @@ export default function SettingsPage() {
 
 
       </div>
+      )}
 
       <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Database</h2>
         <p className="text-sm text-brand-text-muted">Export or restore your local database.</p>
         
+        {ENABLE_SYNC_SECTION && (
         <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
           <div className="text-amber-600 dark:text-amber-400 mt-0.5">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
@@ -390,6 +398,7 @@ export default function SettingsPage() {
             </p>
           </div>
         </div>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <button onClick={handleExport} disabled={exporting}

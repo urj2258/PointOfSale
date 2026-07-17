@@ -33,6 +33,7 @@ export default function VendorDetailPage() {
   const [exporting, setExporting] = useState(false)
   const [summaryFromDate, setSummaryFromDate] = useState('')
   const [summaryToDate, setSummaryToDate] = useState('')
+  const [exportDir, setExportDir] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     if (!vendorId) return
@@ -49,6 +50,15 @@ export default function VendorDetailPage() {
   }, [vendorId, page])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    api.dayClosing.getExportDir().then(dir => setExportDir(dir))
+  }, [])
+
+  const handleChangeDir = async () => {
+    const res = await api.dayClosing.chooseExportDir()
+    if (res.success) setExportDir(res.path)
+  }
 
   const handleExportSummary = async () => {
     if (!vendorId) return
@@ -191,6 +201,16 @@ export default function VendorDetailPage() {
             className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {exporting ? 'Exporting...' : 'Export Summary'}
+          </button>
+
+          {exportDir && (
+            <span className="text-xs text-brand-text-muted max-w-[200px] truncate" title={exportDir}>
+              {exportDir.split(/[/\\]/).pop()}
+            </span>
+          )}
+          <button onClick={handleChangeDir}
+            className="px-3 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-white/30 dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
+            {exportDir ? 'Change Folder' : 'Set Folder'}
           </button>
 
           {(summaryFromDate || summaryToDate) && (

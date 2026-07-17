@@ -352,13 +352,15 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   }
 
   const rows = db.prepare(`
-    SELECT cl.*, c.name as customer_name, inv.invoice_number
+    SELECT cl.*, c.name as customer_name, inv.invoice_number,
+           (SELECT SUM(ii.quantity) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as quantity,
+           (SELECT AVG(ii.rate_per_unit) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as rate_per_unit
     FROM customer_ledger cl
     LEFT JOIN customers c ON c.id = cl.customer_id
     LEFT JOIN invoices inv ON inv.id = cl.invoice_id
     ${where}
     ORDER BY cl.transaction_datetime ASC
-  `).all(...params) as (CustomerLedgerRow & { customer_name: string; invoice_number: string | null })[];
+  `).all(...params) as (CustomerLedgerRow & { customer_name: string; invoice_number: string | null; quantity: number | null; rate_per_unit: number | null })[];
 
   if (rows.length === 0) {
     throw new Error('No entries found in this date range');
@@ -370,7 +372,7 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   const safeTo = toDate ? toDate.replace(/[^0-9-]/g, '') : '';
   const dateSuffix = safeFrom && safeTo ? `_${safeFrom}_to_${safeTo}` : '';
   const safeCustomerName = customerName.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const fileName = `Ledger_${safeCustomerName}${dateSuffix}.xlsx`;
+  const fileName = `Customer_Ledger_${safeCustomerName}${dateSuffix}.xlsx`;
   const filePath = path.join(exportDir || '', fileName);
 
   const workbook = new ExcelJS.Workbook();
@@ -385,6 +387,8 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     { header: 'Date', key: 'date', width: 22 },
     { header: 'Invoice #', key: 'invoice', width: 18 },
     { header: 'Description', key: 'desc', width: 35 },
+    { header: 'Quantity', key: 'qty', width: 12 },
+    { header: 'Rate', key: 'rate', width: 18 },
     { header: 'Total Payment', key: 'total', width: 20 },
     { header: 'Paid Amount', key: 'paid', width: 20 },
     { header: 'Balance', key: 'balance', width: 20 },
@@ -392,14 +396,14 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
 
   sheet.spliceRows(1, 0, []);
 
-  sheet.mergeCells('A1:F1');
+  sheet.mergeCells('A1:H1');
   const title = sheet.getCell('A1');
   title.value = `Customer Ledger Report`;
   title.font = { name: 'Inter', size: 16, bold: true, color: { argb: C.white } };
   title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
   title.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  sheet.mergeCells('A2:F2');
+  sheet.mergeCells('A2:H2');
   const subtitle = sheet.getCell('A2');
   if (fromDate && toDate) {
     subtitle.value = `${customerName} | ${fromDate} → ${toDate}`;
@@ -413,10 +417,10 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   // Empty row for spacing
   sheet.addRow([]);
 
-  const headerRowObj = sheet.addRow(['Date', 'Invoice #', 'Description', 'Total Payment', 'Paid Amount', 'Remaining Balance']);
+  const headerRowObj = sheet.addRow(['Date', 'Invoice #', 'Description', 'Quantity', 'Rate', 'Total Payment', 'Paid Amount', 'Remaining Balance']);
   headerRowObj.font = { name: 'Inter', size: 11, color: { argb: C.muted } };
   headerRowObj.alignment = { vertical: 'middle', horizontal: 'left' };
-  ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
     headerRowObj.getCell(col).border = {
       bottom: { style: 'thin', color: { argb: C.border } }
     };
@@ -424,6 +428,8 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   headerRowObj.getCell('D').alignment = { horizontal: 'right' };
   headerRowObj.getCell('E').alignment = { horizontal: 'right' };
   headerRowObj.getCell('F').alignment = { horizontal: 'right' };
+  headerRowObj.getCell('G').alignment = { horizontal: 'right' };
+  headerRowObj.getCell('H').alignment = { horizontal: 'right' };
 
   const numFmt = '"Rs."#,##0.00';
   let totalPurchases = 0;
@@ -434,6 +440,8 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
       date: row.transaction_datetime,
       invoice: row.invoice_number || '-',
       desc: row.description || '-',
+      qty: row.quantity ?? '-',
+      rate: row.rate_per_unit ?? '-',
       total: row.total_payment,
       paid: row.paid_amount,
       balance: row.remaining_balance,
@@ -443,13 +451,14 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     totalPaid += row.paid_amount;
 
     sheetRow.font = { name: 'Inter', size: 10, color: { argb: C.dark } };
+    sheetRow.getCell('rate').numFmt = numFmt;
     sheetRow.getCell('total').numFmt = numFmt;
     sheetRow.getCell('paid').numFmt = numFmt;
     sheetRow.getCell('balance').numFmt = numFmt;
     sheetRow.alignment = { vertical: 'middle' };
     sheetRow.getCell('date').alignment = { horizontal: 'left' };
 
-    ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+    ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
       sheetRow.getCell(col).border = { bottom: { style: 'thin', color: { argb: C.border } } };
     });
   }
@@ -459,18 +468,21 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     date: 'TOTAL',
     invoice: '',
     desc: '',
+    qty: '',
+    rate: '',
     total: totalPurchases,
     paid: totalPaid,
-    balance: ''
+    balance: totalPurchases - totalPaid
   });
   
   totalsRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
   totalsRow.getCell('total').numFmt = numFmt;
   totalsRow.getCell('paid').numFmt = numFmt;
+  totalsRow.getCell('balance').numFmt = numFmt;
   totalsRow.alignment = { vertical: 'middle', horizontal: 'right' };
   totalsRow.getCell('date').alignment = { horizontal: 'left' };
   
-  ['A', 'B', 'C', 'D', 'E', 'F'].forEach(col => {
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
     totalsRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.bluePale } };
   });
 

@@ -7,6 +7,11 @@ import { useAuth } from '../context/AuthContext'
 import { useNotifications } from '../context/NotificationContext'
 import { api } from '../services/api'
 
+// ── Plug-and-play feature flag ──────────────────────────────────
+// Set to `true` to re-enable sync inactivity notifications.
+const ENABLE_SYNC_SECTION = false
+// ────────────────────────────────────────────────────────────────
+
 interface HeaderProps {
   onMenuToggle: () => void
 }
@@ -29,7 +34,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
   )
 
   useEffect(() => {
-    if (!inactivityNotified) {
+    if (ENABLE_SYNC_SECTION && !inactivityNotified) {
       checkSyncInactivity()
     }
   }, [])
