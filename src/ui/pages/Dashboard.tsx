@@ -219,9 +219,9 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
               { label: 'Pending Customer Invoices', value: stats.pendingInvoices,        color: 'text-amber-500',  bg: 'bg-amber-500/10' },
-              { label: 'Overdue Customer Invoices', value: stats.overdueInvoices,        color: 'text-red-500',    bg: 'bg-red-500/10' },
+              // { label: 'Overdue Customer Invoices', value: stats.overdueInvoices,        color: 'text-red-500',    bg: 'bg-red-500/10' },
               { label: 'Pending Vendor Invoices',   value: stats.pendingVendorInvoices,  color: 'text-amber-500',  bg: 'bg-amber-500/10' },
-              { label: 'Overdue Vendor Invoices',   value: stats.overdueVendorInvoices,  color: 'text-red-500',    bg: 'bg-red-500/10' },
+              // { label: 'Overdue Vendor Invoices',   value: stats.overdueVendorInvoices,  color: 'text-red-500',    bg: 'bg-red-500/10' },
             ].map(card => (
               <div key={card.label} className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-4 flex items-center gap-3">
                 <div className={`flex-shrink-0 w-9 h-9 rounded-xl ${card.bg} flex items-center justify-center`}>

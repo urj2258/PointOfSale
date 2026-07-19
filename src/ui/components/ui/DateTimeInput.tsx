@@ -60,7 +60,7 @@ export default function DateTimeInput({ value, onChange, placeholder = 'dd/mm/yy
   return (
     <DatePicker
       selected={parseDisplayDatetime(value)}
-      onChange={(date) => onChange(date ? formatDisplayDatetime(date) : '')}
+      onChange={(date: Date | null) => onChange(date ? formatDisplayDatetime(date) : '')}
       showTimeSelect
       timeFormat="HH:mm"
       timeIntervals={15}

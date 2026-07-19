@@ -47,7 +47,7 @@ export default function DateInput({ value, onChange, placeholder = 'dd/mm/yyyy',
   return (
     <DatePicker
       selected={parseDisplayDate(value)}
-      onChange={(date) => onChange(date ? formatDisplayDate(date) : '')}
+      onChange={(date: Date | null) => onChange(date ? formatDisplayDate(date) : '')}
       dateFormat="dd/MM/yyyy"
       placeholderText={placeholder}
       maxDate={maxDate}

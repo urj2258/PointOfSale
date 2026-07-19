@@ -437,7 +437,7 @@ export default function VendorLedgerPage() {
                   </select>
                 </div>
                 <div className="col-span-3">
-                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Qty *</label>
+                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Qty * {(() => { const p = products.find(p => p.id === item.product_id); return p?.unit ? <span className="text-brand-text-muted font-normal">({p.unit})</span> : null })()}</label>
                   <input type="number" value={item.quantity} placeholder="0" 
                     onChange={(e) => { 
                       const newItems = [...items]; 
@@ -446,8 +446,8 @@ export default function VendorLedgerPage() {
                       const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
                       setForm(f => ({ ...f, total_payment: String(gt) }));
                     }} 
-                    onFocus={(e) => e.target.select()}
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white" />
+                    onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
                 </div>
                 <div className="col-span-4">
                   <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Rate *</label>
@@ -459,8 +459,8 @@ export default function VendorLedgerPage() {
                       const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
                       setForm(f => ({ ...f, total_payment: String(gt) }));
                     }} 
-                    onFocus={(e) => e.target.select()}
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white" />
+                    onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
                 </div>
                 {Number(item.quantity) > 0 && Number(item.rate_per_unit) > 0 && (
                   <div className="col-span-12 text-right">
@@ -477,13 +477,13 @@ export default function VendorLedgerPage() {
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Total Payment *</label>
-              <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onFocus={(e) => e.target.select()}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+              <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
           </div>
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Paid Amount *</label>
-            <input type="number" value={form.paid_amount} placeholder="0" onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} onFocus={(e) => e.target.select()}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+            <input type="number" value={form.paid_amount} placeholder="0" onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
           </div>
           {remainingBalance >= 0 && (
             <p className="text-sm text-brand-text-muted">Remaining balance: <strong className={remainingBalance === 0 ? 'text-green-600' : 'text-orange-600'}>Rs. {remainingBalance.toLocaleString()}</strong></p>
@@ -494,7 +494,7 @@ export default function VendorLedgerPage() {
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Due Date <span className="text-brand-text-muted font-normal text-xs">(optional — leave blank if not on credit)</span></label>
+            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Payment Due Date <span className="text-brand-text-muted font-normal text-xs">(optional — leave blank if not on credit)</span></label>
             <DateInput value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
             {form.due_date && form.transaction_datetime && toISO(form.due_date) < toISO(form.transaction_datetime.split(' ')[0]) && (

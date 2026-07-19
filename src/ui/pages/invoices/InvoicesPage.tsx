@@ -35,7 +35,7 @@ export default function InvoicesPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
-  const [editing, setEditing] = useState<Invoice | null>(null)
+  const [editing] = useState<Invoice | null>(null)
   const [form, setForm] = useState(emptyForm)
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
@@ -58,7 +58,7 @@ export default function InvoicesPage() {
     try {
       const result = await api.invoices.list(statusFilter || undefined, undefined, undefined, undefined, page, 50)
       const itemsMap: Record<string, { product_name: string; quantity: number; rate_per_unit: number }[]> = {}
-      await Promise.all(result.data.map(async (inv) => {
+      await Promise.all(result.data.map(async (inv: Invoice) => {
         try {
           const withItems = await api.invoices.getWithItems(inv.id) as any
           itemsMap[inv.id] = (withItems.items || []).map((i: any) => ({
@@ -115,57 +115,6 @@ export default function InvoicesPage() {
     const subtotal = f.items.reduce((s, i) => s + i.quantity * i.ratePerUnit, 0)
     const total = subtotal - f.discount_amount
     return { ...f, subtotal, total: Math.max(0, total) }
-  }
-
-  const openCreate = () => {
-    setEditing(null)
-    setForm({ ...emptyForm, invoice_number: `INV-${Date.now()}` })
-    setError('')
-    setPendingEntries([])
-    setSelectedEntryIds([])
-    setModalOpen(true)
-  }
-
-  const openEdit = async (inv: Invoice) => {
-    setEditing(inv)
-    try {
-      const withItems = await api.invoices.getWithItems(inv.id) as Invoice & { items: { product_id: string; product_name: string; quantity: number; rate_per_unit: number }[] }
-      const items: ItemLine[] = (withItems as any).items?.map((i: any) => ({
-        productId: i.product_id,
-        productName: i.product_name || '',
-        quantity: i.quantity,
-        ratePerUnit: i.rate_per_unit,
-      })) || []
-      setForm({
-        customer_id: inv.customer_id,
-        invoice_number: inv.invoice_number,
-        issue_date: inv.issue_date ? fmtIsoDate(inv.issue_date) : '',
-        due_date: inv.due_date ? fmtIsoDate(inv.due_date) : '',
-        subtotal: inv.subtotal,
-        tax_amount: inv.tax_amount,
-        discount_amount: inv.discount_amount,
-        total: inv.total,
-        paid_amount: inv.paid_amount,
-        notes: inv.notes || '',
-        items,
-      })
-    } catch {
-      setForm({
-        customer_id: inv.customer_id,
-        invoice_number: inv.invoice_number,
-        issue_date: inv.issue_date ? fmtIsoDate(inv.issue_date) : '',
-        due_date: inv.due_date ? fmtIsoDate(inv.due_date) : '',
-        subtotal: inv.subtotal,
-        tax_amount: inv.tax_amount,
-        discount_amount: inv.discount_amount,
-        total: inv.total,
-        paid_amount: inv.paid_amount,
-        notes: inv.notes || '',
-        items: [],
-      })
-    }
-    setError('')
-    setModalOpen(true)
   }
 
   const addItemLine = () => {
@@ -247,12 +196,6 @@ const toISO = (d: string) => {
   const [dd, mm, yyyy] = parts.map(p => p.trim())
   if (dd.length !== 2 || mm.length !== 2 || yyyy.length !== 4) return d
   return `${yyyy}-${mm}-${dd}`
-}
-const fmtIsoDate = (d: string) => {
-  if (!d) return ''
-  const parts = d.split('T')[0].split('-')
-  if (parts.length !== 3) return d
-  return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
 const statusColor: Record<string, string> = {

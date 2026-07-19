@@ -61,15 +61,15 @@ export default function SettingsPage() {
   const { addNotification } = useNotifications()
   const [syncing, setSyncing] = useState(false)
   const [result, setResult] = useState<SyncResult | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
+  const [_syncError, setSyncError] = useState<string | null>(null)
   const [pulling, setPulling] = useState(false)
   const [pullResult, setPullResult] = useState<SyncResult | null>(null)
-  const [pullError, setPullError] = useState<string | null>(null)
+  const [_pullError, setPullError] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
   const [importing, setImporting] = useState(false)
-  const [exportMsg, setExportMsg] = useState<string | null>(null)
-  const [importMsg, setImportMsg] = useState<string | null>(null)
-  const [expandedFailed, setExpandedFailed] = useState<string | null>(null)
+  const [_exportMsg, _setExportMsg] = useState<string | null>(null)
+  const [_importMsg, _setImportMsg] = useState<string | null>(null)
+  const [_expandedFailed, _setExpandedFailed] = useState<string | null>(null)
   const [exportPath, setExportPath] = useState<string | null>(null)
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null)
   const [nuking, setNuking] = useState(false)
@@ -251,17 +251,6 @@ export default function SettingsPage() {
       setNuking(false)
     }
   }
-
-  const totalPushed = result?.pushResults.reduce((s, r) => s + (r.pushed ?? 0), 0) ?? 0
-  const totalPulled = result?.pullResults.reduce((s, r) => s + (r.pulled ?? 0), 0) ?? 0
-  const totalFailed = result
-    ? result.pushResults.reduce((s, r) => s + (r.failed > 0 ? r.failed : 0), 0) +
-      result.pullResults.reduce((s, r) => s + (r.failed > 0 ? r.failed : 0), 0)
-    : 0
-
-  const failedTables = result
-    ? [...result.pushResults, ...result.pullResults].filter(r => r.failed > 0)
-    : []
 
   return (
     <div className="space-y-6 max-w-2xl">

@@ -62,16 +62,13 @@ export default function InventoryPage() {
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
-  const [stockModalOpen, setStockModalOpen] = useState(false)
   const [editing, setEditing] = useState<InventoryItem | null>(null)
-  const [stockItem, setStockItem] = useState<InventoryItem | null>(null)
   const [lowStockThreshold, setLowStockThreshold] = useState(() => {
     const saved = localStorage.getItem('low_stock_threshold')
     return saved ? Number(saved) : 10
   })
 
   const [form, setForm] = useState<Form>({ name: '', unit: '', quantity: '0', description: '' })
-  const [stockForm, setStockForm] = useState({ change: '0' })
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -110,14 +107,6 @@ export default function InventoryPage() {
     setServerError('')
     setTouched({})
     setModalOpen(true)
-  }
-
-  const openStock = (item: InventoryItem) => {
-    setStockItem(item)
-    setStockForm({ change: '0' })
-    setServerError('')
-    setModalOpen(false)
-    setStockModalOpen(true)
   }
 
   const setField = <K extends keyof Form>(field: K, value: string) => {
@@ -163,28 +152,6 @@ export default function InventoryPage() {
       setServerError('An unexpected error occurred. Please try again.')
       toast.error('An unexpected error occurred')
     }
-  }
-
-  const handleStockSubmit = async () => {
-    if (!stockItem) return
-    const n = Number(stockForm.change)
-    if (!Number.isFinite(n) || !Number.isInteger(n)) {
-      setServerError('Quantity change must be a whole number.')
-      return
-    }
-    if (n === 0) {
-      setServerError('Quantity change cannot be zero.')
-      return
-    }
-    if ((stockItem.quantity + n) < 0) {
-      setServerError(`Insufficient stock. Current: ${stockItem.quantity}, trying to remove ${Math.abs(n)}.`)
-      return
-    }
-    setServerError('')
-    await api.inventory.adjustStock(stockItem.id, n)
-    setStockModalOpen(false)
-    load()
-    toast.success('Stock adjusted successfully')
   }
 
   const handleDelete = (item: InventoryItem) => {

@@ -37,7 +37,7 @@ export default function DayClosingPage() {
   useEffect(() => { load() }, [load])
 
   useEffect(() => {
-    api.dayClosing.getExportDir().then(dir => setExportDir(dir))
+    api.dayClosing.getExportDir().then((dir: string) => setExportDir(dir))
   }, [])
 
   const doGenerate = async (date: string) => {

@@ -455,6 +455,11 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     sheetRow.getCell('total').numFmt = numFmt;
     sheetRow.getCell('paid').numFmt = numFmt;
     sheetRow.getCell('balance').numFmt = numFmt;
+    if (row.remaining_balance > 0) {
+      sheetRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+    } else if (row.remaining_balance === 0) {
+      sheetRow.getCell('balance').font = { color: { argb: 'FF808080' } };
+    }
     sheetRow.alignment = { vertical: 'middle' };
     sheetRow.getCell('date').alignment = { horizontal: 'left' };
 
@@ -479,6 +484,12 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   totalsRow.getCell('total').numFmt = numFmt;
   totalsRow.getCell('paid').numFmt = numFmt;
   totalsRow.getCell('balance').numFmt = numFmt;
+  const totalBalance = totalPurchases - totalPaid;
+  if (totalBalance > 0) {
+    totalsRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+  } else if (totalBalance === 0) {
+    totalsRow.getCell('balance').font = { color: { argb: 'FF808080' } };
+  }
   totalsRow.alignment = { vertical: 'middle', horizontal: 'right' };
   totalsRow.getCell('date').alignment = { horizontal: 'left' };
   

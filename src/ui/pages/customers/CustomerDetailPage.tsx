@@ -52,7 +52,7 @@ export default function CustomerDetailPage() {
   useEffect(() => { loadData() }, [loadData])
 
   useEffect(() => {
-    api.dayClosing.getExportDir().then(dir => setExportDir(dir))
+    api.dayClosing.getExportDir().then((dir: string) => setExportDir(dir))
   }, [])
 
   const handleChangeDir = async () => {
@@ -117,7 +117,7 @@ export default function CustomerDetailPage() {
     {
       key: 'remaining_balance', label: 'Remaining Balance',
       render: (e: CustomerLedgerEntry) => (
-        <span className={e.remaining_balance > 0 ? 'text-red-600' : e.remaining_balance < 0 ? 'text-green-600' : 'text-gray-500'}>
+        <span className={e.remaining_balance > 0 ? 'text-green-600' : e.remaining_balance < 0 ? 'text-red-600' : 'text-gray-500'}>
           Rs. {e.remaining_balance.toLocaleString()}
         </span>
       ),

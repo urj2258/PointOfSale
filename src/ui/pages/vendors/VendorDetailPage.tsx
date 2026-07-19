@@ -52,7 +52,7 @@ export default function VendorDetailPage() {
   useEffect(() => { loadData() }, [loadData])
 
   useEffect(() => {
-    api.dayClosing.getExportDir().then(dir => setExportDir(dir))
+    api.dayClosing.getExportDir().then((dir: string) => setExportDir(dir))
   }, [])
 
   const handleChangeDir = async () => {
