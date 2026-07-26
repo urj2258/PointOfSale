@@ -184,7 +184,7 @@ export default function InventoryPage() {
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Inventory</h1>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-surface/70 backdrop-blur-md shadow-premium-sm border border-white/30 dark:border-white/[0.08]">
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-brand-surface/70 backdrop-blur-md shadow-premium-sm border-brand-border dark:border-white/[0.08]">
             <span className="text-xs text-brand-text-muted whitespace-nowrap">Low stock: ≤</span>
             <input
               type="number"
@@ -194,7 +194,7 @@ export default function InventoryPage() {
               className="w-14 text-center text-sm font-semibold text-brand-text-primary bg-transparent border-none outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
             />
           </div>
-          <button onClick={openCreate} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
+          <button onClick={openCreate} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
             Add Product
           </button>
         </div>
@@ -202,7 +202,7 @@ export default function InventoryPage() {
 
       <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search products..." />
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
         <DataTable
           columns={columns}
           data={data?.data ?? []}
@@ -250,8 +250,8 @@ export default function InventoryPage() {
             {touched.description && fieldErrors.description && <p className="text-xs text-red-500 mt-1">{fieldErrors.description}</p>}
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
+            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
           </div>
         </div>
       </Modal>

@@ -70,7 +70,7 @@ export default function Header({ onMenuToggle }: HeaderProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-brand-surface/70 backdrop-blur-md shadow-premium-sm border border-white/30 dark:border-white/[0.08]">
+      <div className="flex items-center gap-1.5 pl-3 pr-2 py-1.5 rounded-full bg-brand-surface/70 backdrop-blur-md shadow-premium-sm border-brand-border dark:border-white/[0.08]">
         <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/40 dark:bg-white/[0.06] text-sm text-brand-text-secondary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />

@@ -29,7 +29,7 @@ interface NavIconProps {
 }
 
 function NavIcon({ type, active }: NavIconProps) {
-  const cls = `w-5 h-5 ${active ? 'text-gray-900' : 'text-brand-text-muted'}`
+  const cls = `w-5 h-5 ${active ? 'text-gray-900' : 'text-[#4B5563] dark:text-brand-text-muted'}`
   const S = (children: React.ReactNode) => <svg className={cls} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">{children}</svg>
   switch (type) {
     case 'grid':
@@ -78,10 +78,10 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {open && (
         <div className="fixed inset-0 bg-black/30 z-[100] lg:hidden" onClick={onClose} />
       )}
-      <aside className={`fixed top-0 left-0 h-full z-30 bg-white/35 dark:bg-black/20 backdrop-blur-md border-r border-white/25 dark:border-white/[0.05] shadow-premium-sm transition-all duration-300 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
+      <aside className={`fixed top-0 left-0 h-full z-30 bg-brand-surface dark:bg-black/20 backdrop-blur-md border-r border-brand-border dark:border-white/[0.05] shadow-premium-sm transition-all duration-300 flex flex-col ${open ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0 lg:static lg:z-auto`}
         style={{ width: '240px', maxWidth: '260px', minWidth: '220px' }}
       >
-        <div className="flex items-center justify-between px-6 h-16 border-b border-white/20 dark:border-white/[0.06]">
+        <div className="flex items-center justify-between px-6 h-16 border-b border-brand-border dark:border-white/[0.06]">
           <div className="flex items-center gap-2">
             <Logo />
             <span className="font-semibold text-brand-text-primary text-lg">Posits</span>
@@ -99,8 +99,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               className={({ isActive }) =>
                 `flex items-center gap-3.5 px-5 py-2.5 rounded-full text-sm font-medium transition-colors ${
                   isActive
-                    ? 'bg-brand-primary text-gray-900'
-                    : 'text-brand-text-secondary dark:text-white hover:bg-white/40 dark:hover:bg-white/[0.12] hover:text-brand-text-primary dark:hover:text-white'
+                    ? 'bg-[#D1D5D5] text-gray-900'
+                    : 'text-[#4B5563] dark:text-white hover:bg-[#E5E7EB] dark:hover:bg-white/[0.12] hover:text-gray-900 dark:hover:text-white'
                 }`
               }
             >
@@ -114,7 +114,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           ))}
         </nav>
 
-        <div className="px-4 py-5 border-t border-white/20 dark:border-white/[0.06]">
+        <div className="px-4 py-5 border-t border-brand-border dark:border-white/[0.06]">
           <ThemeSwitch />
         </div>
       </aside>

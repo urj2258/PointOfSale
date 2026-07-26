@@ -8,6 +8,7 @@ export interface CustomerRow {
   phone: string | null
   address: string | null
   shop_name: string | null
+  opening_balance: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -37,14 +38,14 @@ export function getCustomerById(id: string) {
   return db.prepare('SELECT * FROM customers WHERE id = ? AND deleted_at IS NULL').get(id) as CustomerRow | undefined;
 }
 
-export function createCustomer(name: string, phone?: string, address?: string, shop_name?: string) {
+export function createCustomer(name: string, phone?: string, address?: string, shop_name?: string, opening_balance = 0) {
   const db = getDatabase();
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   db.prepare(`
-    INSERT INTO customers (id, name, phone, address, shop_name, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, phone ?? null, address ?? null, shop_name ?? null, now, now);
+    INSERT INTO customers (id, name, phone, address, shop_name, opening_balance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone ?? null, address ?? null, shop_name ?? null, opening_balance, now, now);
   return getCustomerById(id);
 }
 
@@ -61,18 +62,21 @@ export function insertCustomerInTx(
   name: string,
   phone: string,
   address: string,
-  shop_name?: string
+  shop_name?: string,
+  opening_balance = 0
 ): void {
   db.prepare(`
-    INSERT INTO customers (id, name, phone, address, shop_name, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, phone, address, shop_name ?? null, now, now);
+    INSERT INTO customers (id, name, phone, address, shop_name, opening_balance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone, address, shop_name ?? null, opening_balance, now, now);
 }
 
 
-export function updateCustomer(id: string, name: string, phone?: string, address?: string, shop_name?: string) {
+export function updateCustomer(id: string, name: string, phone?: string, address?: string, shop_name?: string, opening_balance?: number) {
   const db = getDatabase();
-  updateRow(db, 'customers', id, { name, phone: phone ?? null, address: address ?? null, shop_name: shop_name ?? null });
+  const updates: Record<string, any> = { name, phone: phone ?? null, address: address ?? null, shop_name: shop_name ?? null };
+  if (opening_balance !== undefined) updates.opening_balance = opening_balance;
+  updateRow(db, 'customers', id, updates);
   return getCustomerById(id);
 }
 
@@ -80,33 +84,51 @@ export function softDeleteCustomer(id: string) {
   const db = getDatabase();
   const now = new Date().toISOString();
 
+  const getLedgerEntries = db.prepare(
+    'SELECT id, invoice_id FROM customer_ledger WHERE customer_id = ? AND deleted_at IS NULL'
+  );
+  const getInvoiceItems = db.prepare(
+    'SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ? AND deleted_at IS NULL'
+  );
+  const addInventory = db.prepare(
+    'UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+  const softDeleteInvoiceItems = db.prepare(
+    'UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL'
+  );
+  const softDeleteInvoices = db.prepare(
+    'UPDATE invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL'
+  );
+  const softDeleteLedger = db.prepare(
+    'UPDATE customer_ledger SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+  const softDeleteCustomerRow = db.prepare(
+    'UPDATE customers SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+
   const transaction = db.transaction(() => {
-    const ledgerEntries = db.prepare(
-      'SELECT id, quantity, product_id FROM customer_ledger WHERE customer_id = ? AND deleted_at IS NULL'
-    ).all(id) as { id: string; quantity: number; product_id: string }[];
+    const ledgerEntries = getLedgerEntries.all(id) as { id: string; invoice_id: string | null }[];
 
     for (const entry of ledgerEntries) {
-      softDeleteRow(db, 'customer_ledger', entry.id);
-      db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?')
-        .run(entry.quantity, now, entry.product_id);
+      if (entry.invoice_id) {
+        const items = getInvoiceItems.all(entry.invoice_id) as { product_id: string; quantity: number }[];
+        for (const item of items) {
+          addInventory.run(item.quantity, now, item.product_id);
+        }
+        softDeleteInvoiceItems.run(now, now, entry.invoice_id);
+        softDeleteInvoices.run(now, now, entry.invoice_id);
+      }
+      softDeleteLedger.run(now, now, entry.id);
     }
 
-    const invoices = db.prepare(
-      'SELECT id FROM invoices WHERE customer_id = ? AND deleted_at IS NULL'
-    ).all(id) as { id: string }[];
-
-    for (const invoice of invoices) {
-      db.prepare('UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL')
-        .run(now, now, invoice.id);
-      softDeleteRow(db, 'invoices', invoice.id);
-    }
-
-    softDeleteRow(db, 'customers', id);
+    softDeleteCustomerRow.run(now, now, id);
   });
 
   transaction();
 }
 
+// Note: Superseded by getCustomerRunningBalance (which includes opening_balance).
+// Kept for backward compatibility via preload/api bridge.
 export function getCustomerOutstanding(id: string) {
   const db = getDatabase();
   const row = db.prepare(`
@@ -114,4 +136,18 @@ export function getCustomerOutstanding(id: string) {
     FROM customer_ledger WHERE customer_id = ? AND deleted_at IS NULL
   `).get(id) as { total: number };
   return row.total;
+}
+
+export function getCustomerRunningBalance(id: string): number {
+  const db = getDatabase();
+  const customer = db.prepare('SELECT opening_balance FROM customers WHERE id = ? AND deleted_at IS NULL').get(id) as { opening_balance: number } | undefined;
+  if (!customer) throw new Error('Customer not found');
+  // running balance = opening_balance + SUM(total_payment) - SUM(paid_amount)
+  // Sale increases what customer owes (+total_payment), payment reduces it (-paid_amount)
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(total_payment), 0) as total_sales,
+           COALESCE(SUM(paid_amount), 0) as total_paid
+    FROM customer_ledger WHERE customer_id = ? AND deleted_at IS NULL
+  `).get(id) as { total_sales: number; total_paid: number };
+  return customer.opening_balance + row.total_sales - row.total_paid;
 }

@@ -2,7 +2,7 @@ import { ipcMain, BrowserWindow, dialog } from 'electron';
 import fs from 'fs';
 import * as dayClosingRepo from '../repositories/dayClosingRepository.js';
 import * as vlRepo from '../repositories/vendorLedgerRepository.js';
-import { assertNonEmptyString, assertOptionalString, assertPositiveNumber, assertNonNegativeNumber, assertValidDateString, assertName, assertPhone, assertAddress, handleIpcError } from '../validation.js';
+import { assertNonEmptyString, assertOptionalString, assertPositiveNumber, assertNonNegativeNumber, assertValidDateString, assertName, assertPhone, assertAddress, assertNumber, handleIpcError } from '../validation.js';
 
 export function registerVendorLedgerIpc() {
   ipcMain.handle('vendor-ledger:list', (_e, vendorId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => {
@@ -19,9 +19,24 @@ export function registerVendorLedgerIpc() {
 
   ipcMain.handle('vendor-ledger:create', (_e, vendorId: string, transactionDatetime: string,
     items: { productId: string; quantity: number; ratePerUnit: number }[],
-    totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string) => {
+    totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string,
+    transactionType?: string, taggedCustomerId?: string) => {
+    const tt = transactionType || 'purchase';
     assertNonEmptyString(vendorId, 'vendor_id');
     assertValidDateString(transactionDatetime, 'transaction_datetime');
+    if (tt === 'payment') {
+      // Payment entries: items/vehicle not required
+      assertNonNegativeNumber(totalPayment, 'total_payment');
+      assertNonNegativeNumber(paidAmount, 'paid_amount');
+      assertOptionalString(description, 'description');
+      if (taggedCustomerId) {
+        assertNonEmptyString(taggedCustomerId, 'tagged_customer_id');
+        return vlRepo.createVendorPaymentWithCustomerRef(
+          vendorId, transactionDatetime, paidAmount, description || '', taggedCustomerId
+        );
+      }
+      return vlRepo.createVendorLedgerEntry(vendorId, transactionDatetime, items, totalPayment, paidAmount, description, undefined, undefined, 'payment');
+    }
     if (!Array.isArray(items) || items.length === 0) throw new Error('At least one item is required');
     for (const item of items) {
       assertNonEmptyString(item.productId, 'product_id');
@@ -33,7 +48,7 @@ export function registerVendorLedgerIpc() {
     assertOptionalString(description, 'description');
     assertOptionalString(vehicleNumber, 'vehicle_number');
     assertOptionalString(dueDate, 'due_date');
-    return vlRepo.createVendorLedgerEntry(vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate);
+    return vlRepo.createVendorLedgerEntry(vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate, 'purchase');
   });
 
   ipcMain.handle('vendor-ledger:update', (_e, id: string, vendorId: string, transactionDatetime: string,
@@ -96,6 +111,7 @@ export function registerVendorLedgerIpc() {
       assertPhone(vendorData?.phone, 'phone');
       assertAddress(vendorData?.address, 'address');
       assertOptionalString(vendorData?.mill_name, 'mill_name');
+      if (vendorData?.opening_balance !== undefined) assertNumber(vendorData.opening_balance, 'opening_balance');
       
       // Validate purchase fields
       assertValidDateString(purchaseData?.transactionDatetime, 'transaction_datetime');
@@ -117,6 +133,7 @@ export function registerVendorLedgerIpc() {
           phone: vendorData.phone.trim(),
           address: vendorData.address.trim(),
           mill_name: vendorData.mill_name?.trim() || undefined,
+          opening_balance: vendorData.opening_balance ?? 0,
         },
         {
           items: purchaseData.items.map((it: any) => ({

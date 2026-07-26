@@ -5,15 +5,15 @@ import type { Customer, CustomerLedgerEntry, PaginatedResult } from '../../types
 import DataTable from '../../components/ui/DataTable'
 import Pagination from '../../components/ui/Pagination'
 import DateInput from '../../components/ui/DateInput'
+import CustomerSaleModal from '../../components/customers/CustomerSaleModal'
+import ConfirmModal from '../../components/ui/ConfirmModal'
 import toast from 'react-hot-toast'
 
-// Convert a dd/mm/yyyy display string (from DateInput) to YYYY-MM-DD for the API
 function displayToIso(display: string): string {
   const [dd, mm, yyyy] = display.split('/')
   return `${yyyy}-${mm}-${dd}`
 }
 
-// Parse dd/mm/yyyy into a Date for DateInput's minDate prop
 const parseDisplay = (d: string): Date | undefined => {
   if (!d) return undefined
   const [dd, mm, yyyy] = d.split('/')
@@ -28,6 +28,23 @@ export default function CustomerDetailPage() {
   const [data, setData] = useState<PaginatedResult<CustomerLedgerEntry> | null>(null)
   const [page, setPage] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [runningBalance, setRunningBalance] = useState<number | null>(null)
+  const [saleModalOpen, setSaleModalOpen] = useState(false)
+  const [editingEntry, setEditingEntry] = useState<CustomerLedgerEntry | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  const openEdit = (entry: CustomerLedgerEntry) => {
+    if (entry.transaction_type === 'payment') {
+      toast.error('Payment entries cannot be edited')
+      return
+    }
+    setEditingEntry(entry)
+    setSaleModalOpen(true)
+  }
+
+  const handleDelete = (entry: CustomerLedgerEntry) => {
+    setDeletingId(entry.id)
+  }
 
   // Export State
   const [exporting, setExporting] = useState(false)
@@ -43,6 +60,8 @@ export default function CustomerDetailPage() {
       setCustomer(c)
       const result = await api.customerLedger.list(customerId, undefined, undefined, page, 20)
       setData(result)
+      const rb = await api.customers.runningBalance(customerId)
+      setRunningBalance(rb)
     } catch {
       toast.error('Failed to load customer data')
     }
@@ -106,21 +125,32 @@ export default function CustomerDetailPage() {
 
   const columns = [
     { key: 'transaction_datetime', label: 'Date', render: (e: CustomerLedgerEntry) => new Date(e.transaction_datetime).toLocaleDateString() },
-    { key: 'invoice_number', label: 'Invoice #', render: (e: CustomerLedgerEntry & { invoice_number?: string }) => e.invoice_number || '-' },
-    { key: 'product_name', label: 'Product', render: (e: CustomerLedgerEntry) => e.product_name || '-' },
+    { key: 'transaction_type', label: 'Type', render: (e: CustomerLedgerEntry) => (
+      <span className={'text-xs font-medium px-2 py-0.5 rounded-full ' + (e.transaction_type === 'payment' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400')}>
+        {e.transaction_type === 'payment' ? 'Payment' : 'Sale'}
+      </span>
+    )},
+    { key: 'invoice_number', label: 'Invoice #', render: (e: CustomerLedgerEntry) => e.invoice_number || '-' },
+    {
+      key: 'product_name', label: 'Product',
+      render: (e: CustomerLedgerEntry) => e.transaction_type === 'payment' ? '-' : (e.product_name || '-'),
+    },
     { key: 'description', label: 'Desc' },
-    { key: 'vehicle_number', label: 'Vehicle' },
-    { key: 'quantity', label: 'Qty', render: (e: CustomerLedgerEntry) => e.quantity ?? '-' },
-    { key: 'rate_per_unit', label: 'Rate', render: (e: CustomerLedgerEntry) => e.rate_per_unit != null ? `Rs. ${e.rate_per_unit}` : '-' },
+    { key: 'vehicle_number', label: 'Vehicle', render: (e: CustomerLedgerEntry) => e.transaction_type === 'payment' ? '-' : (e.vehicle_number || '-') },
+    { key: 'quantity', label: 'Qty', render: (e: CustomerLedgerEntry) => e.transaction_type === 'payment' ? '-' : (e.quantity ?? '-') },
+    { key: 'rate_per_unit', label: 'Rate', render: (e: CustomerLedgerEntry) => e.transaction_type === 'payment' ? '-' : (e.rate_per_unit != null ? `Rs. ${e.rate_per_unit}` : '-') },
     { key: 'total_payment', label: 'Total', render: (e: CustomerLedgerEntry) => `Rs. ${e.total_payment.toLocaleString()}` },
     { key: 'paid_amount', label: 'Paid', render: (e: CustomerLedgerEntry) => `Rs. ${e.paid_amount.toLocaleString()}` },
     {
       key: 'remaining_balance', label: 'Remaining Balance',
-      render: (e: CustomerLedgerEntry) => (
-        <span className={e.remaining_balance > 0 ? 'text-green-600' : e.remaining_balance < 0 ? 'text-red-600' : 'text-gray-500'}>
-          Rs. {e.remaining_balance.toLocaleString()}
-        </span>
-      ),
+      render: (e: CustomerLedgerEntry) => {
+        const rb = e.running_balance!
+        return (
+          <span className={rb < 0 ? 'text-red-600' : rb > 0 ? 'text-green-600' : 'text-gray-500'}>
+            {rb > 0 ? '+ ' : rb < 0 ? '- ' : ''}Rs. {Math.abs(rb).toLocaleString()}
+          </span>
+        )
+      },
     },
   ]
 
@@ -129,7 +159,7 @@ export default function CustomerDetailPage() {
       <div className="flex items-center gap-4">
         <button 
           onClick={() => navigate('/customers')}
-          className="p-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.04] hover:bg-white/80 dark:hover:bg-white/[0.08] transition-colors text-brand-text-muted hover:text-brand-text-primary"
+          className="p-2 rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] bg-white dark:bg-white/[0.04] hover:bg-gray-50 dark:hover:bg-white/[0.08] transition-colors text-brand-text-muted hover:text-brand-text-primary"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         </button>
@@ -143,7 +173,22 @@ export default function CustomerDetailPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] px-5 py-4">
+          <p className="text-sm text-brand-text-muted">Opening Balance</p>
+          <p className={`text-2xl font-bold mt-1 ${(customer?.opening_balance ?? 0) > 0 ? 'text-green-600' : (customer?.opening_balance ?? 0) < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+            {(customer?.opening_balance ?? 0) > 0 ? '+ ' : (customer?.opening_balance ?? 0) < 0 ? '- ' : ''}Rs. {Math.abs(customer?.opening_balance ?? 0).toLocaleString()}
+          </p>
+        </div>
+        <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] px-5 py-4">
+          <p className="text-sm text-brand-text-muted">Remaining Balance</p>
+          <p className={`text-2xl font-bold mt-1 ${(runningBalance ?? 0) > 0 ? 'text-green-600' : (runningBalance ?? 0) < 0 ? 'text-red-600' : 'text-gray-500'}`}>
+            {(runningBalance ?? 0) > 0 ? '+ ' : (runningBalance ?? 0) < 0 ? '- ' : ''}Rs. {Math.abs(runningBalance ?? 0).toLocaleString()}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-4">
         <p className="text-sm font-semibold text-brand-text-primary dark:text-white mb-3">
           Export Ledger
         </p>
@@ -152,7 +197,7 @@ export default function CustomerDetailPage() {
             value={summaryFromDate}
             onChange={setSummaryFromDate}
             placeholder="From (dd/mm/yyyy)"
-            className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
+            className="px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] bg-white dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
           />
 
           <DateInput
@@ -160,13 +205,13 @@ export default function CustomerDetailPage() {
             onChange={setSummaryToDate}
             placeholder="To (dd/mm/yyyy)"
             minDate={parseDisplay(summaryFromDate)}
-            className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
+            className="px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] bg-white dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
           />
 
           <button
             onClick={handleExportSummary}
             disabled={exporting}
-            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {exporting ? 'Exporting...' : 'Export Summary'}
           </button>
@@ -177,7 +222,7 @@ export default function CustomerDetailPage() {
             </span>
           )}
           <button onClick={handleChangeDir}
-            className="px-3 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-white/30 dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
+            className="px-3 py-2 bg-white dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-[#D1D5DB] dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
             {exportDir ? 'Change Folder' : 'Set Folder'}
           </button>
 
@@ -192,10 +237,32 @@ export default function CustomerDetailPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
-        <DataTable columns={columns} data={data?.data ?? []} loading={loading} />
+      <div className="flex justify-end">
+        <button onClick={() => setSaleModalOpen(true)} disabled={!customerId}
+          className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+          New Sale
+        </button>
+      </div>
+
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
+        <DataTable columns={columns} data={data?.data ?? []} onEdit={openEdit} onDelete={handleDelete} loading={loading} />
         {data && <Pagination page={data.page} total={data.total} limit={20} onChange={setPage} />}
       </div>
+
+      {customerId && (
+        <CustomerSaleModal
+          open={saleModalOpen}
+          onClose={() => { setSaleModalOpen(false); setEditingEntry(null) }}
+          onSuccess={loadData}
+          lockedCustomerId={customerId}
+          editEntry={editingEntry ?? undefined}
+        />
+      )}
+      <ConfirmModal open={deletingId !== null} onClose={() => setDeletingId(null)}
+        onConfirm={async () => { if (deletingId) { try { await api.customerLedger.delete(deletingId); toast.success('Entry deleted successfully') } catch { toast.error('Failed to delete entry') } setDeletingId(null); loadData() } }}
+        title="Delete Entry"
+        message="Are you sure you want to delete this entry? This action cannot be undone."
+        confirmLabel="Delete" danger />
     </div>
   )
 }

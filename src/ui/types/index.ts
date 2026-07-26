@@ -4,6 +4,7 @@ export interface Vendor {
   phone: string | null
   address: string | null
   mill_name: string | null
+  opening_balance?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -16,6 +17,7 @@ export interface Customer {
   phone: string | null
   address: string | null
   shop_name: string | null
+  opening_balance?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -46,6 +48,8 @@ export interface VendorLedgerEntry {
   total_payment: number
   paid_amount: number
   remaining_balance: number
+  transaction_type: string
+  running_balance?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -69,6 +73,8 @@ export interface CustomerLedgerEntry {
   total_payment: number
   paid_amount: number
   remaining_balance: number
+  transaction_type: string
+  running_balance?: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -76,6 +82,8 @@ export interface CustomerLedgerEntry {
   customer_name?: string
   product_name?: string
   invoice_id?: string | null
+  invoice_due_date?: string | null
+  invoice_number?: string
 }
 
 export interface ExpenseCategory {

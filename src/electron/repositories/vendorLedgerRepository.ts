@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { insertVendorInTx } from './vendorRepository.js';
 import ExcelJS from 'exceljs';
 import path from 'path';
+import { BUSINESS_NAME, BUSINESS_PHONE, C } from '../constants.js';
 
 function itemsAreEqual(
   oldItems: { product_id: string; quantity: number }[],
@@ -47,11 +48,13 @@ export interface VendorLedgerRow {
   total_payment: number
   paid_amount: number
   remaining_balance: number
+  transaction_type: string
   created_at: string
   updated_at: string
   deleted_at: string | null
   synced: number
   vendor_invoice_id: string | null
+  linked_entry_id: string | null
 }
 
 export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dateTo?: string, page = 1, limit = 20) {
@@ -78,6 +81,7 @@ export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dat
 
   const data = db.prepare(`
     SELECT vl.*, v.name as vendor_name,
+           v.opening_balance + SUM(vl.paid_amount - vl.total_payment) OVER (PARTITION BY vl.vendor_id ORDER BY vl.transaction_datetime ASC, vl.id ASC) as running_balance,
            vi.due_date as invoice_due_date,
            (SELECT json_group_array(json_object('name', i.name, 'quantity', vii.quantity, 'rate', vii.rate_per_unit))
             FROM vendor_invoice_items vii
@@ -87,13 +91,14 @@ export function getVendorLedgerEntries(vendorId?: string, dateFrom?: string, dat
     LEFT JOIN vendors v ON v.id = vl.vendor_id
     LEFT JOIN vendor_invoices vi ON vi.id = vl.vendor_invoice_id
     ${where}
-    ORDER BY vl.transaction_datetime DESC
+    ORDER BY vl.transaction_datetime ASC, vl.id ASC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset) as (VendorLedgerRow & { vendor_name: string; items_json: string | null; invoice_due_date: string | null })[];
+  `).all(...params, limit, offset) as (VendorLedgerRow & { vendor_name: string; items_json: string | null; running_balance: number; invoice_due_date: string | null })[];
 
   const parsed = data.map(row => ({
     ...row,
     items: row.items_json ? JSON.parse(row.items_json) as { name: string; quantity: number; rate: number }[] : [],
+    running_balance: row.running_balance ?? 0,
   }));
 
   return { data: parsed, total: countRow.total, page, limit };
@@ -126,7 +131,7 @@ export function createVendorLedgerEntry(
   vendorId: string, transactionDatetime: string,
   items: { productId: string; quantity: number; ratePerUnit: number }[],
   totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string,
-  dueDate?: string
+  dueDate?: string, transactionType: 'purchase' | 'payment' = 'purchase'
 ) {
   const db = getDatabase();
   const now = new Date().toISOString();
@@ -135,34 +140,44 @@ export function createVendorLedgerEntry(
   const remainingBalance = totalPayment - paidAmount;
 
   const transaction = db.transaction(() => {
-    // 1. Create vendor_invoice
-    const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
-    const invoiceNumber = `INV-${Date.now()}`;
-    const resolvedDueDate = dueDate || transactionDatetime.split('T')[0];
-    db.prepare(`
-      INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(invoiceId, vendorId, invoiceNumber, transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, paidAmount, invoiceTotal - paidAmount, (invoiceTotal - paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
-
-    // 2. Insert items and update stock
-    for (const item of items) {
-      const itemId = crypto.randomUUID();
+    if (transactionType === 'payment') {
+      // Payment entries: no invoice, no items, no inventory changes
       db.prepare(`
-        INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+        INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ledgerId, vendorId, transactionDatetime, description ?? null, null,
+        totalPayment, paidAmount, Math.abs(remainingBalance), 'payment', now, now, null);
+    } else {
+      // 1. Create vendor_invoice
+      const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+      const invoiceNumber = `INV-${Date.now()}`;
+      const resolvedDueDate = dueDate || transactionDatetime.split('T')[0];
+      db.prepare(`
+        INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(invoiceId, vendorId, invoiceNumber, transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, paidAmount, invoiceTotal - paidAmount, (invoiceTotal - paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
 
-      db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
-        .run(item.quantity, now, item.productId);
+      // 2. Insert items and update stock
+      for (const item of items) {
+        const itemId = crypto.randomUUID();
+        db.prepare(`
+          INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+
+        db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
+          .run(item.quantity, now, item.productId);
+      }
+
+      // 3. Create vendor_ledger
+      db.prepare(`
+        INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ledgerId, vendorId, transactionDatetime, description ?? null, vehicleNumber ?? null,
+        totalPayment, paidAmount, remainingBalance, 'purchase', now, now, invoiceId);
     }
-
-    // 3. Create vendor_ledger
-    db.prepare(`
-      INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
-        total_payment, paid_amount, remaining_balance, created_at, updated_at, vendor_invoice_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(ledgerId, vendorId, transactionDatetime, description ?? null, vehicleNumber ?? null,
-      totalPayment, paidAmount, remainingBalance, now, now, invoiceId);
   });
 
   transaction();
@@ -174,12 +189,13 @@ export function createVendorLedgerEntry(
  * If either insert fails the whole operation rolls back — no orphan vendors.
  */
 export function createVendorWithPurchase(
-  vendor: { name: string; phone: string; address: string; mill_name?: string },
+  vendor: { name: string; phone: string; address: string; mill_name?: string; opening_balance?: number },
   purchase: {
     items: { productId: string; quantity: number; ratePerUnit: number }[];
     transactionDatetime: string; totalPayment: number; paidAmount: number;
     description?: string; vehicleNumber?: string; dueDate?: string;
-  }
+  },
+  transactionType: 'purchase' | 'payment' = 'purchase'
 ) {
   const db = getDatabase();
   const now = new Date().toISOString();
@@ -190,36 +206,98 @@ export function createVendorWithPurchase(
 
   const transaction = db.transaction(() => {
     // 1. Insert the new vendor
-    insertVendorInTx(db, vendorId, now, vendor.name, vendor.phone, vendor.address, vendor.mill_name);
+    insertVendorInTx(db, vendorId, now, vendor.name, vendor.phone, vendor.address, vendor.mill_name, vendor.opening_balance ?? 0);
 
-    // 2. Create vendor_invoice
-    const invoiceTotal = purchase.items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
-    const invoiceNumber = `INV-${Date.now()}`;
-    const resolvedDueDate = purchase.dueDate || purchase.transactionDatetime.split('T')[0];
-    db.prepare(`
-      INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(invoiceId, vendorId, invoiceNumber, purchase.transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, purchase.paidAmount, invoiceTotal - purchase.paidAmount, (invoiceTotal - purchase.paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
-
-    // 3. Insert items and update stock
-    for (const item of purchase.items) {
-      const itemId = crypto.randomUUID();
+    if (transactionType === 'payment') {
+      // Payment entries: no invoice, no items, no inventory changes
       db.prepare(`
-        INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+        INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ledgerId, vendorId, purchase.transactionDatetime, purchase.description ?? null, null,
+        purchase.totalPayment, purchase.paidAmount, Math.abs(remainingBalance), 'payment', now, now, null);
+    } else {
+      // 2. Create vendor_invoice
+      const invoiceTotal = purchase.items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+      const invoiceNumber = `INV-${Date.now()}`;
+      const resolvedDueDate = purchase.dueDate || purchase.transactionDatetime.split('T')[0];
+      db.prepare(`
+        INSERT INTO vendor_invoices (id, vendor_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(invoiceId, vendorId, invoiceNumber, purchase.transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, purchase.paidAmount, invoiceTotal - purchase.paidAmount, (invoiceTotal - purchase.paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
 
-      db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
-        .run(item.quantity, now, item.productId);
+      // 3. Insert items and update stock
+      for (const item of purchase.items) {
+        const itemId = crypto.randomUUID();
+        db.prepare(`
+          INSERT INTO vendor_invoice_items (id, vendor_invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+
+        db.prepare(`UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?`)
+          .run(item.quantity, now, item.productId);
+      }
+
+      // 4. Create vendor_ledger
+      db.prepare(`
+        INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(ledgerId, vendorId, purchase.transactionDatetime, purchase.description ?? null, purchase.vehicleNumber ?? null,
+        purchase.totalPayment, purchase.paidAmount, remainingBalance, 'purchase', now, now, invoiceId);
     }
+  });
 
-    // 4. Create vendor_ledger
+  transaction();
+  return getVendorLedgerById(ledgerId);
+}
+
+/**
+ * Creates a vendor payment entry and optionally a linked customer ledger entry
+ * (e.g. when a customer pays the mill directly on the business's behalf).
+ * Both entries are created in a single transaction.
+ */
+export function createVendorPaymentWithCustomerRef(
+  vendorId: string, transactionDatetime: string,
+  amount: number, description: string, customerId?: string,
+  customerDescription?: string
+) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const ledgerId = crypto.randomUUID();
+
+  let customerLedgerId: string | undefined
+
+  if (customerId) {
+    const vendor = db.prepare('SELECT name FROM vendors WHERE id = ?').get(vendorId) as { name: string } | undefined;
+    const vendorName = vendor?.name || '';
+
+    customerDescription = `Paid to mill directly (ref: @${vendorName})`;
+  }
+
+  const transaction = db.transaction(() => {
+    // Insert vendor_ledger payment entry
     db.prepare(`
       INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
-        total_payment, paid_amount, remaining_balance, created_at, updated_at, vendor_invoice_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(ledgerId, vendorId, purchase.transactionDatetime, purchase.description ?? null, purchase.vehicleNumber ?? null,
-      purchase.totalPayment, purchase.paidAmount, remainingBalance, now, now, invoiceId);
+        total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id, linked_entry_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, vendorId, transactionDatetime, description, null,
+      0, amount, amount, 'payment', now, now, null, null);
+
+    // If a customer is referenced, create customer_ledger payment entry
+    if (customerId) {
+      customerLedgerId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, invoice_id, linked_entry_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(customerLedgerId, customerId, transactionDatetime, customerDescription ?? null, null,
+        0, amount, amount, 'payment', now, now, null, ledgerId);
+
+      // Update vendor_ledger to point back to the customer_ledger entry
+      db.prepare(`UPDATE vendor_ledger SET linked_entry_id = ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(customerLedgerId, now, ledgerId);
+    }
   });
 
   transaction();
@@ -314,6 +392,22 @@ export function softDeleteVendorLedgerEntry(id: string) {
         .run(now, now, entry.vendor_invoice_id);
     }
 
+    // Cascade: delete linked customer_ledger payment entry (if any)
+    if (entry.linked_entry_id) {
+      const linked = db.prepare('SELECT id, invoice_id, deleted_at FROM customer_ledger WHERE id = ?').get(entry.linked_entry_id) as { id: string; invoice_id: string | null; deleted_at: string | null } | undefined;
+      if (linked && !linked.deleted_at) {
+        if (linked.invoice_id) {
+          const linkedItems = db.prepare('SELECT product_id, quantity FROM invoice_items WHERE invoice_id = ? AND deleted_at IS NULL').all(linked.invoice_id) as { product_id: string; quantity: number }[];
+          for (const item of linkedItems) {
+            db.prepare('UPDATE inventory SET quantity = quantity + ?, updated_at = ?, synced = 0 WHERE id = ?').run(item.quantity, now, item.product_id);
+          }
+          db.prepare('UPDATE invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE invoice_id = ? AND deleted_at IS NULL').run(now, now, linked.invoice_id);
+          db.prepare('UPDATE invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL').run(now, now, linked.invoice_id);
+        }
+        softDeleteRow(db, 'customer_ledger', entry.linked_entry_id);
+      }
+    }
+
     // Soft-delete the ledger entry itself (last)
     softDeleteRow(db, 'vendor_ledger', id);
   });
@@ -358,15 +452,15 @@ export function linkEntriesToInvoice(entryIds: string[], invoiceId: string) {
   transaction();
 }
 
-const C = {
-  dark: 'FF111827', blue: 'FF2563EB', bluePale: 'FFDBEAFE',
-  green: 'FF059669', red: 'FFDC2626',
-  greenBg: 'FFD1FAE5', redBg: 'FFFEE2E2', grayBg: 'FFF9FAFB',
-  border: 'FFE5E7EB', white: 'FFFFFFFF', muted: 'FF6B7280',
-};
-
 export async function exportVendorLedgerExcel(vendorId: string, fromDate?: string, toDate?: string, exportDir?: string): Promise<{ buffer: Buffer; filePath: string }> {
   const db = getDatabase();
+
+  const vendor = db.prepare('SELECT name, mill_name, opening_balance FROM vendors WHERE id = ?').get(vendorId) as { name: string; mill_name: string | null; opening_balance: number } | undefined;
+  if (!vendor) throw new Error('Vendor not found');
+
+  const vendorName = vendor.name;
+  const millName = vendor.mill_name;
+  const openingBalance = vendor.opening_balance;
 
   let where = 'WHERE vl.deleted_at IS NULL AND vl.vendor_id = ?';
   const params: unknown[] = [vendorId];
@@ -388,14 +482,12 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
     LEFT JOIN vendors v ON v.id = vl.vendor_id
     LEFT JOIN vendor_invoices vi ON vi.id = vl.vendor_invoice_id
     ${where}
-    ORDER BY vl.transaction_datetime ASC
+    ORDER BY vl.transaction_datetime ASC, vl.id ASC
   `).all(...params) as (VendorLedgerRow & { vendor_name: string; invoice_number: string | null; quantity: number | null; rate_per_unit: number | null })[];
 
   if (rows.length === 0) {
     throw new Error('No entries found in this date range');
   }
-
-  const vendorName = rows[0].vendor_name || 'Vendor';
 
   const safeFrom = fromDate ? fromDate.replace(/[^0-9-]/g, '') : '';
   const safeTo = toDate ? toDate.replace(/[^0-9-]/g, '') : '';
@@ -423,29 +515,74 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
     { header: 'Balance', key: 'balance', width: 20 },
   ];
 
-  sheet.spliceRows(1, 0, []);
-
+  // Row 1: Business name
   sheet.mergeCells('A1:H1');
-  const title = sheet.getCell('A1');
-  title.value = `Vendor Ledger Report`;
+  const businessRow = sheet.getCell('A1');
+  businessRow.value = BUSINESS_NAME;
+  businessRow.font = { name: 'Inter', size: 14, bold: true, color: { argb: C.white } };
+  businessRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
+  businessRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Row 2: Business name & phone
+  sheet.mergeCells('A2:H2');
+  const infoRow = sheet.getCell('A2');
+  infoRow.value = `${BUSINESS_NAME} - ${BUSINESS_PHONE}`;
+  infoRow.font = { name: 'Inter', size: 10, color: { argb: C.white } };
+  infoRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } };
+  infoRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Row 3: Report title
+  sheet.mergeCells('A3:H3');
+  const title = sheet.getCell('A3');
+  title.value = 'Vendor Ledger Report';
   title.font = { name: 'Inter', size: 16, bold: true, color: { argb: C.white } };
   title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
   title.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  sheet.mergeCells('A2:H2');
-  const subtitle = sheet.getCell('A2');
+  // Row 4: Subtitle with vendor name, mill name, date range
+  sheet.mergeCells('A4:H4');
+  const subtitle = sheet.getCell('A4');
+  const millPart = millName ? ` | ${millName}` : '';
   if (fromDate && toDate) {
-    subtitle.value = `${vendorName} | ${fromDate} → ${toDate}`;
+    subtitle.value = `${vendorName}${millPart} | ${fromDate} \u2192 ${toDate}`;
   } else {
-    subtitle.value = vendorName;
+    subtitle.value = `${vendorName}${millPart}`;
   }
   subtitle.font = { name: 'Inter', size: 12, bold: true, color: { argb: C.white } };
   subtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } };
   subtitle.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  // Empty row for spacing
+  // Gap row
   sheet.addRow([]);
 
+  // Opening Balance row
+  const numFmt = '"Rs."#,##0.00';
+  const obSheetRow = sheet.addRow({
+    date: 'Opening Balance',
+    invoice: '',
+    desc: '',
+    qty: '',
+    rate: '',
+    total: '',
+    paid: '',
+    balance: openingBalance,
+  });
+  obSheetRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
+  obSheetRow.getCell('balance').numFmt = numFmt;
+  if (openingBalance > 0) {
+    obSheetRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+  } else if (openingBalance < 0) {
+    obSheetRow.getCell('balance').font = { color: { argb: C.red } };
+  }
+  obSheetRow.alignment = { vertical: 'middle' };
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+    obSheetRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grayBg } };
+  });
+
+  // Gap row
+  sheet.addRow([]);
+
+  // Column headers
   const headerRowObj = sheet.addRow(['Date', 'Invoice #', 'Description', 'Quantity', 'Rate', 'Total Payment', 'Paid Amount', 'Remaining Balance']);
   headerRowObj.font = { name: 'Inter', size: 11, color: { argb: C.muted } };
   headerRowObj.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -460,11 +597,12 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
   headerRowObj.getCell('G').alignment = { horizontal: 'right' };
   headerRowObj.getCell('H').alignment = { horizontal: 'right' };
 
-  const numFmt = '"Rs."#,##0.00';
   let totalPurchases = 0;
   let totalPaid = 0;
+  let runningBalance = openingBalance;
 
   for (const row of rows) {
+    runningBalance += (row.paid_amount - row.total_payment);
     const sheetRow = sheet.addRow({
       date: row.transaction_datetime,
       invoice: row.invoice_number || '-',
@@ -473,9 +611,9 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
       rate: row.rate_per_unit ?? '-',
       total: row.total_payment,
       paid: row.paid_amount,
-      balance: row.remaining_balance,
+      balance: runningBalance,
     });
-    
+
     totalPurchases += row.total_payment;
     totalPaid += row.paid_amount;
 
@@ -484,9 +622,11 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
     sheetRow.getCell('total').numFmt = numFmt;
     sheetRow.getCell('paid').numFmt = numFmt;
     sheetRow.getCell('balance').numFmt = numFmt;
-    if (row.remaining_balance > 0) {
-      sheetRow.getCell('balance').font = { color: { argb: 'FFFF0000' } };
-    } else if (row.remaining_balance === 0) {
+    if (runningBalance > 0) {
+      sheetRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+    } else if (runningBalance < 0) {
+      sheetRow.getCell('balance').font = { color: { argb: C.red } };
+    } else {
       sheetRow.getCell('balance').font = { color: { argb: 'FF808080' } };
     }
     sheetRow.alignment = { vertical: 'middle' };
@@ -506,22 +646,23 @@ export async function exportVendorLedgerExcel(vendorId: string, fromDate?: strin
     rate: '',
     total: totalPurchases,
     paid: totalPaid,
-    balance: totalPurchases - totalPaid
+    balance: runningBalance,
   });
-  
+
   totalsRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
   totalsRow.getCell('total').numFmt = numFmt;
   totalsRow.getCell('paid').numFmt = numFmt;
   totalsRow.getCell('balance').numFmt = numFmt;
-  const totalBalance = totalPurchases - totalPaid;
-  if (totalBalance > 0) {
-    totalsRow.getCell('balance').font = { color: { argb: 'FFFF0000' } };
-  } else if (totalBalance === 0) {
+  if (runningBalance > 0) {
+    totalsRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+  } else if (runningBalance < 0) {
+    totalsRow.getCell('balance').font = { color: { argb: C.red } };
+  } else {
     totalsRow.getCell('balance').font = { color: { argb: 'FF808080' } };
   }
   totalsRow.alignment = { vertical: 'middle', horizontal: 'right' };
   totalsRow.getCell('date').alignment = { horizontal: 'left' };
-  
+
   ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
     totalsRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.bluePale } };
   });

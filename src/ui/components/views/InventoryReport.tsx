@@ -42,7 +42,7 @@ export default function InventoryReport() {
           <h1 className="text-2xl font-bold text-brand-text-primary">Inventory Report</h1>
           <p className="text-sm text-brand-text-muted">Stock thresholds and product availability.</p>
         </div>
-        <button onClick={() => setOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-button bg-brand-primary text-gray-900 font-semibold text-sm hover:brightness-105 transition-all">
+        <button onClick={() => setOpen(true)} className="flex items-center gap-2 px-4 py-2 rounded-button bg-[#6B7280] text-white font-semibold text-sm hover:brightness-105 transition-all">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" /></svg>
           Add New Record
         </button>
@@ -113,7 +113,7 @@ export default function InventoryReport() {
             <input type="text" value={qty} onChange={(e) => setQty(e.target.value)} placeholder="e.g. 340" className="w-full px-4 py-2.5 rounded-input bg-brand-surface/50 border border-brand-border text-sm text-brand-text-primary placeholder:text-brand-text-muted outline-none focus:border-brand-primary transition-colors" />
           </div>
           {error && <p className="text-sm text-accent-orange">{error}</p>}
-          <button type="submit" className="w-full py-2.5 rounded-button bg-brand-primary text-gray-900 font-semibold text-sm hover:brightness-105 transition-all">Add Item</button>
+          <button type="submit" className="w-full py-2.5 rounded-button bg-[#6B7280] text-white font-semibold text-sm hover:brightness-105 transition-all">Add Item</button>
         </form>
       </AddRecordDrawer>
     </div>

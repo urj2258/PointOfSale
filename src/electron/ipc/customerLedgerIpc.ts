@@ -17,6 +17,39 @@ export function registerCustomerLedgerIpc() {
     return clRepo.getCustomerLedgerById(id);
   });
 
+  ipcMain.handle('customer-ledger:create', (_e, customerId: string, transactionDatetime: string,
+    items: { productId: string; quantity: number; ratePerUnit: number }[],
+    totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string,
+    transactionType?: string, taggedVendorId?: string) => {
+    const tt = transactionType || 'sale';
+    assertNonEmptyString(customerId, 'customer_id');
+    assertValidDateString(transactionDatetime, 'transaction_datetime');
+    if (tt === 'payment') {
+      assertNonNegativeNumber(totalPayment, 'total_payment');
+      assertNonNegativeNumber(paidAmount, 'paid_amount');
+      assertOptionalString(description, 'description');
+      if (taggedVendorId) {
+        assertNonEmptyString(taggedVendorId, 'tagged_vendor_id');
+        return clRepo.createCustomerPaymentWithVendorRef(
+          customerId, transactionDatetime, paidAmount, description || '', taggedVendorId
+        );
+      }
+      return clRepo.createCustomerLedgerEntry(customerId, transactionDatetime, items, totalPayment, paidAmount, description, undefined, undefined, 'payment');
+    }
+    if (!Array.isArray(items) || items.length === 0) throw new Error('At least one item is required');
+    for (const item of items) {
+      assertNonEmptyString(item.productId, 'product_id');
+      assertPositiveNumber(item.quantity, 'quantity');
+      assertPositiveNumber(item.ratePerUnit, 'rate_per_unit');
+    }
+    assertNonNegativeNumber(totalPayment, 'total_payment');
+    assertNonNegativeNumber(paidAmount, 'paid_amount');
+    assertOptionalString(description, 'description');
+    assertOptionalString(vehicleNumber, 'vehicle_number');
+    assertOptionalString(dueDate, 'due_date');
+    return clRepo.createCustomerLedgerEntry(customerId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate, 'sale');
+  });
+
   ipcMain.handle('customer-ledger:create-multi-item', (_e, customerData: any, saleData: any) => {
     try {
       if (!customerData?.id) {
@@ -46,6 +79,7 @@ export function registerCustomerLedgerIpc() {
           phone: customerData.phone?.trim() || '',
           address: customerData.address?.trim() || '',
           shop_name: customerData.shop_name?.trim() || undefined,
+          opening_balance: customerData.opening_balance ?? 0,
         },
         {
           items: saleData.items,

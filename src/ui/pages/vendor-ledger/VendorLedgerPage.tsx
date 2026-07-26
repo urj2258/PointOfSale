@@ -1,4 +1,5 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { api } from '../../services/api'
 import type { VendorLedgerEntry, PaginatedResult, Vendor, InventoryItem } from '../../types'
 import DataTable from '../../components/ui/DataTable'
@@ -62,9 +63,11 @@ export default function VendorLedgerPage() {
 
   // Vendor mode: 'existing' = dropdown, 'new' = inline form
   const [vendorMode, setVendorMode] = useState<'existing' | 'new'>('existing')
-  const [newVendorForm, setNewVendorForm] = useState({ name: '', phone: '', address: '', mill_name: '' })
+  const [newVendorForm, setNewVendorForm] = useState({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' as 'mill_owes_us' | 'we_owe_mill' })
   const [newVendorErrors, setNewVendorErrors] = useState<Record<string, string>>({})
   const [newVendorTouched, setNewVendorTouched] = useState<Record<string, boolean>>({})
+
+  const [transactionType, setTransactionType] = useState<'purchase' | 'payment'>('purchase')
 
   const [form, setForm] = useState({
     vendor_id: '', transaction_datetime: '',
@@ -73,6 +76,15 @@ export default function VendorLedgerPage() {
   const [items, setItems] = useState([{ product_id: '', quantity: '', rate_per_unit: '' }])
   const [error, setError] = useState('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Customer @mention state
+  const [customers, setCustomers] = useState<{ id: string; name: string }[]>([])
+  const [mentionOpen, setMentionOpen] = useState(false)
+  const [mentionFilter, setMentionFilter] = useState('')
+  const [mentionCursor, setMentionCursor] = useState(0)
+  const [taggedCustomerId, setTaggedCustomerId] = useState<string | null>(null)
+  const [mentionRect, setMentionRect] = useState<{ top: number; left: number; width: number } | null>(null)
+  const descRef = useRef<HTMLInputElement>(null)
 
 
 
@@ -90,14 +102,20 @@ export default function VendorLedgerPage() {
   useEffect(() => {
     api.vendors.list(undefined, 1, 1000).then((r: PaginatedResult<Vendor>) => setVendors(r.data))
     api.inventory.list(undefined, 1, 1000).then((r: PaginatedResult<InventoryItem>) => setProducts(r.data))
+    api.customers.list(undefined, 1, 1000).then((r: any) => setCustomers(r.data.map((c: any) => ({ id: c.id, name: c.name }))))
   }, [])
 
   const openCreate = () => {
     setEditing(null)
+    setTransactionType('purchase')
     setVendorMode('existing')
-    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '' })
+    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
     setNewVendorErrors({})
     setNewVendorTouched({})
+    setTaggedCustomerId(null)
+    setMentionOpen(false)
+    setMentionFilter('')
+    setMentionRect(null)
     setItems([{ product_id: '', quantity: '', rate_per_unit: '' }])
     setForm({ vendor_id: '', transaction_datetime: localNow(), total_payment: '', paid_amount: '', description: '', vehicle_number: '', due_date: '' })
     setError('')
@@ -106,10 +124,15 @@ export default function VendorLedgerPage() {
 
   const openEdit = async (entry: VendorLedgerEntry) => {
     setEditing(entry)
+    setTransactionType(entry.transaction_type as 'purchase' | 'payment')
     setVendorMode('existing')
-    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '' })
+    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
     setNewVendorErrors({})
     setNewVendorTouched({})
+    setTaggedCustomerId(null)
+    setMentionOpen(false)
+    setMentionFilter('')
+    setMentionRect(null)
 
     // Pre-fill due_date from the joined invoice_due_date field
     const rawDueDate = entry.invoice_due_date || ''
@@ -191,29 +214,31 @@ export default function VendorLedgerPage() {
     if (vendorMode === 'existing' && !form.vendor_id) { toast.error('Please select a vendor.'); return }
     if (!form.transaction_datetime) { toast.error('Fill required fields'); return }
 
-    // Due date validation: must not be before purchase date or today
-    if (form.due_date) {
-      const todayISO = new Date().toISOString().split('T')[0]
-      const purchaseISO = toISO(form.transaction_datetime.split(' ')[0])
-      const dueISO = toISO(form.due_date)
-      
-      if (dueISO < todayISO) {
-        toast.error('Due date cannot be in the past')
-        return
+    if (transactionType === 'purchase') {
+      if (form.due_date) {
+        const todayISO = new Date().toISOString().split('T')[0]
+        const purchaseISO = toISO(form.transaction_datetime.split(' ')[0])
+        const dueISO = toISO(form.due_date)
+        if (dueISO < todayISO) {
+          toast.error('Due date cannot be in the past')
+          return
+        }
+        if (dueISO && purchaseISO && dueISO < purchaseISO) {
+          toast.error('Due date cannot be earlier than the purchase date')
+          return
+        }
       }
-      if (dueISO && purchaseISO && dueISO < purchaseISO) {
-        toast.error('Due date cannot be earlier than the purchase date')
-        return
+
+      if (items.length === 0) { toast.error('Add at least one item'); return }
+      for (const item of items) {
+        if (!item.product_id) { toast.error('Select a product for all rows'); return }
+        if (Number(item.quantity) <= 0 || Number(item.rate_per_unit) <= 0) { toast.error('Quantity and rate must be positive for all items'); return }
       }
+      if (Number(form.paid_amount) > Number(form.total_payment)) { toast.error('Paid amount cannot exceed total payment'); return }
+    } else if (transactionType === 'payment') {
+      if (!form.paid_amount || Number(form.paid_amount) <= 0) { toast.error('Amount is required for payment'); return }
     }
 
-    if (items.length === 0) { toast.error('Add at least one item'); return }
-    for (const item of items) {
-      if (!item.product_id) { toast.error('Select a product for all rows'); return }
-      if (Number(item.quantity) <= 0 || Number(item.rate_per_unit) <= 0) { toast.error('Quantity and rate must be positive for all items'); return }
-    }
-
-    if (Number(form.paid_amount) > Number(form.total_payment)) { toast.error('Paid amount cannot exceed total payment'); return }
     setError('')
     const isoDt = toISODatetime(form.transaction_datetime)
     const isoDueDate = form.due_date ? toISO(form.due_date) : undefined
@@ -228,9 +253,18 @@ export default function VendorLedgerPage() {
           form.vendor_id, isoDt, formattedItems,
           Number(form.total_payment), Number(form.paid_amount),
           form.description || undefined, form.vehicle_number || undefined, isoDueDate)
+      } else if (transactionType === 'payment') {
+        await api.vendorLedger.create(
+          form.vendor_id, isoDt, [],
+          Number(form.total_payment), Number(form.paid_amount),
+          form.description || undefined, undefined, undefined, 'payment',
+          taggedCustomerId || undefined
+        )
       } else if (vendorMode === 'new') {
+        const obAmount = Number(newVendorForm.obAmount) || 0
+        const openingBalance = newVendorForm.obDirection === 'mill_owes_us' ? obAmount : -obAmount
         const result = await api.vendorLedger.createWithNewVendor(
-          { name: newVendorForm.name, phone: newVendorForm.phone, address: newVendorForm.address, mill_name: newVendorForm.mill_name || undefined },
+          { name: newVendorForm.name, phone: newVendorForm.phone, address: newVendorForm.address, mill_name: newVendorForm.mill_name || undefined, opening_balance: openingBalance },
           { items: formattedItems, transactionDatetime: isoDt, totalPayment: Number(form.total_payment), paidAmount: Number(form.paid_amount), description: form.description || undefined, vehicleNumber: form.vehicle_number || undefined, dueDate: isoDueDate }
         )
         if ((result as any)?.error) { toast.error((result as any).error); return }
@@ -242,9 +276,9 @@ export default function VendorLedgerPage() {
       }
       setModalOpen(false)
       load()
-      toast.success(editing ? 'Purchase entry updated successfully' : 'Purchase entry created successfully')
+      toast.success(editing ? 'Entry updated successfully' : (transactionType === 'payment' ? 'Payment entry created successfully' : 'Purchase entry created successfully'))
     } catch {
-      toast.error('Failed to save purchase entry')
+      toast.error('Failed to save entry')
     }
   }
 
@@ -254,12 +288,57 @@ export default function VendorLedgerPage() {
 
   const remainingBalance = Number(form.total_payment) - Number(form.paid_amount)
 
+  const filteredCustomers = mentionFilter
+    ? customers.filter(c => c.name.toLowerCase().includes(mentionFilter.toLowerCase()))
+    : customers
+
+  const handleDescChange = (val: string) => {
+    setForm(f => ({ ...f, description: val }))
+    const atIndex = val.lastIndexOf('@')
+    if (atIndex >= 0) {
+      const afterAt = val.slice(atIndex + 1)
+      if (!afterAt.includes(' ')) {
+        setMentionOpen(true)
+        setMentionFilter(afterAt)
+        setMentionCursor(0)
+        if (descRef.current) {
+          const r = descRef.current.getBoundingClientRect()
+          setMentionRect({ top: r.bottom, left: r.left, width: r.width })
+        }
+      } else {
+        setMentionOpen(false)
+        setMentionRect(null)
+      }
+    } else {
+      setMentionOpen(false)
+      setMentionRect(null)
+      setTaggedCustomerId(null)
+    }
+  }
+
+  const selectCustomer = (customer: { id: string; name: string }) => {
+    const val = form.description
+    const atIndex = val.lastIndexOf('@')
+    const before = val.slice(0, atIndex)
+    setForm(f => ({ ...f, description: before + '@' + customer.name + ' ' }))
+    setTaggedCustomerId(customer.id)
+    setMentionOpen(false)
+    setMentionRect(null)
+    descRef.current?.focus()
+  }
+
   const columns = [
     { key: 'transaction_datetime', label: 'Date', render: (e: VendorLedgerEntry) => new Date(e.transaction_datetime).toLocaleDateString() },
     { key: 'vendor_name', label: 'Vendor' },
+    { key: 'transaction_type', label: 'Type', render: (e: VendorLedgerEntry) => (
+      <span className={'text-xs font-medium px-2 py-0.5 rounded-full ' + (e.transaction_type === 'payment' ? 'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400' : 'bg-blue-100 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400')}>
+        {e.transaction_type === 'payment' ? 'Payment' : 'Purchase'}
+      </span>
+    )},
     {
       key: 'product_name', label: 'Product',
       render: (e: VendorLedgerEntry) => {
+        if (e.transaction_type === 'payment') return '-'
         const items = e.items
         if (!items || items.length === 0) return e.product_name || '-'
         return (
@@ -270,10 +349,11 @@ export default function VendorLedgerPage() {
       },
     },
     { key: 'description', label: 'Desc' },
-    { key: 'vehicle_number', label: 'Vehicle' },
+    { key: 'vehicle_number', label: 'Vehicle', render: (e: VendorLedgerEntry) => e.transaction_type === 'payment' ? '-' : (e.vehicle_number || '-') },
     {
       key: 'quantity', label: 'Qty',
       render: (e: VendorLedgerEntry) => {
+        if (e.transaction_type === 'payment') return '-'
         const items = e.items
         if (!items || items.length === 0) return e.quantity ?? '-'
         return (
@@ -286,6 +366,7 @@ export default function VendorLedgerPage() {
     {
       key: 'rate_per_unit', label: 'Rate',
       render: (e: VendorLedgerEntry) => {
+        if (e.transaction_type === 'payment') return '-'
         const items = e.items
         if (!items || items.length === 0) return `Rs. ${e.rate_per_unit ?? 0}`
         return (
@@ -299,11 +380,14 @@ export default function VendorLedgerPage() {
     { key: 'paid_amount', label: 'Paid', render: (e: VendorLedgerEntry) => `Rs. ${e.paid_amount.toLocaleString()}` },
     {
       key: 'remaining_balance', label: 'Remaining Balance',
-      render: (e: VendorLedgerEntry) => (
-        <span className={e.remaining_balance < 0 ? 'text-green-600' : e.remaining_balance > 0 ? 'text-red-600' : 'text-gray-500'}>
-          Rs. {e.remaining_balance.toLocaleString()}
-        </span>
-      ),
+      render: (e: VendorLedgerEntry) => {
+        const rb = e.running_balance!
+        return (
+          <span className={rb < 0 ? 'text-red-600' : rb > 0 ? 'text-green-600' : 'text-gray-500'}>
+            Rs. {rb.toLocaleString()}
+          </span>
+        )
+      },
     },
   ]
 
@@ -311,7 +395,7 @@ export default function VendorLedgerPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Vendor Ledger</h1>
-        <button onClick={openCreate} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
+        <button onClick={openCreate} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
           New Purchase
         </button>
       </div>
@@ -322,7 +406,7 @@ export default function VendorLedgerPage() {
           <select value={filterVendor} onChange={(e) => { setFilterVendor(e.target.value); setPage(1) }}
             className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
             <option value="">All Vendors</option>
-            {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+            {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.mill_name ? ` (${v.mill_name})` : ''}</option>)}
           </select>
         </div>
         <div>
@@ -337,20 +421,40 @@ export default function VendorLedgerPage() {
         </div>
         {(filterVendor || filterDateFrom || filterDateTo) && (
           <button onClick={() => { setFilterVendor(''); setFilterDateFrom(''); setFilterDateTo(''); setPage(1) }}
-            className="px-3 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">
+            className="px-3 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">
             Clear
           </button>
         )}
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
         <DataTable columns={columns} data={data?.data ?? []} onEdit={openEdit} onDelete={handleDelete} loading={loading} />
         {data && <Pagination page={data.page} total={data.total} limit={20} onChange={setPage} />}
       </div>
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Purchase' : 'New Purchase'}>
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? (transactionType === 'payment' ? 'Edit Payment' : 'Edit Purchase') : (transactionType === 'payment' ? 'New Payment' : 'New Purchase')}>
         <div className="space-y-4 max-h-[70vh] overflow-y-auto">
           {error && <p className="text-sm text-red-500">{error}</p>}
+
+          {!editing ? (
+            <div className="flex rounded-xl border border-gray-200 dark:border-white/[0.1] overflow-hidden">
+              <button type="button" onClick={() => setTransactionType('purchase')}
+                className={'flex-1 py-2 text-sm font-medium transition-colors ' + (transactionType === 'purchase' ? 'bg-[#6B7280] text-white' : 'bg-gray-50 dark:bg-white/[0.04] text-brand-text-muted dark:text-gray-400')}>
+                Purchase
+              </button>
+              <button type="button" onClick={() => setTransactionType('payment')}
+                className={'flex-1 py-2 text-sm font-medium transition-colors ' + (transactionType === 'payment' ? 'bg-[#6B7280] text-white' : 'bg-gray-50 dark:bg-white/[0.04] text-brand-text-muted dark:text-gray-400')}>
+                Payment
+              </button>
+            </div>
+          ) : (
+            <div className="flex rounded-xl border border-gray-200 dark:border-white/[0.1] overflow-hidden">
+              <div className={'flex-1 py-2 text-sm font-medium text-center ' + (transactionType === 'purchase' ? 'bg-[#6B7280] text-white' : 'bg-gray-50 dark:bg-white/[0.04] text-brand-text-muted dark:text-gray-400')}>
+                {transactionType === 'payment' ? 'Payment' : 'Purchase'}
+              </div>
+            </div>
+          )}
+
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="text-sm font-medium text-brand-text-primary dark:text-white">Vendor *</label>
@@ -361,7 +465,7 @@ export default function VendorLedgerPage() {
                     setVendorMode(v => v === 'existing' ? 'new' : 'existing')
                     setNewVendorErrors({})
                     setNewVendorTouched({})
-                    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '' })
+                    setNewVendorForm({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
                   }}
                   className="text-xs font-medium text-gray-900 dark:text-white hover:underline"
                 >
@@ -374,7 +478,7 @@ export default function VendorLedgerPage() {
               <select value={form.vendor_id} onChange={(e) => setForm({ ...form, vendor_id: e.target.value })}
                 className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
                 <option value="">Select Vendor</option>
-                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                {vendors.map((v) => <option key={v.id} value={v.id}>{v.name}{v.mill_name ? ` (${v.mill_name})` : ''}</option>)}
               </select>
             ) : (
               <div className="space-y-3 p-3 bg-amber-50/50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-700/30 rounded-xl">
@@ -405,115 +509,162 @@ export default function VendorLedgerPage() {
                     )}
                   </div>
                 ))}
+                <div>
+                  <label className="block text-xs font-medium text-brand-text-primary dark:text-white mb-1">Opening Balance</label>
+                  <div className="flex gap-2 items-center">
+                    <select value={newVendorForm.obDirection} onChange={e => setNewVendorForm(prev => ({ ...prev, obDirection: e.target.value as 'mill_owes_us' | 'we_owe_mill' }))}
+                      className="px-2 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                      <option value="mill_owes_us">Mill owes us</option>
+                      <option value="we_owe_mill">We owe mill</option>
+                    </select>
+                    <input type="number" value={newVendorForm.obAmount} placeholder="0"
+                      onChange={e => { const val = e.target.value; setNewVendorForm(prev => ({ ...prev, obAmount: val })) }}
+                      onWheel={(e) => e.currentTarget.blur()}
+                      className="w-28 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
+                  </div>
+                </div>
               </div>
             )}
           </div>
-          <div className="space-y-4 bg-gray-50/50 dark:bg-white/[0.02] p-4 rounded-xl border border-gray-100 dark:border-white/[0.05]">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="text-sm font-semibold text-brand-text-primary dark:text-white">Purchase Items</h3>
-              <button type="button" onClick={() => setItems([...items, { product_id: '', quantity: '', rate_per_unit: '' }])} className="text-xs font-medium text-gray-900 dark:text-white hover:underline">
-                + Add Item
-              </button>
-            </div>
-            
-            {items.map((item, idx) => (
-              <div key={idx} className="relative grid grid-cols-12 gap-3 items-end bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
-                {items.length > 1 && (
-                  <button type="button" onClick={() => {
-                    const newItems = items.filter((_, i) => i !== idx)
-                    setItems(newItems)
-                    const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0)
-                    setForm(f => ({ ...f, total_payment: String(gt) }))
-                  }} className="absolute -top-2 -right-2 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200">
-                    ×
-                  </button>
-                )}
-                <div className="col-span-5">
-                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Product *</label>
-                  <select value={item.product_id} onChange={(e) => { const newItems = [...items]; newItems[idx].product_id = e.target.value; setItems(newItems); }}
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white">
-                    <option value="">Select Product</option>
-                    {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-3">
-                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Qty * {(() => { const p = products.find(p => p.id === item.product_id); return p?.unit ? <span className="text-brand-text-muted font-normal">({p.unit})</span> : null })()}</label>
-                  <input type="number" value={item.quantity} placeholder="0" 
-                    onChange={(e) => { 
-                      const newItems = [...items]; 
-                      newItems[idx].quantity = e.target.value; 
-                      setItems(newItems);
-                      const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
-                      setForm(f => ({ ...f, total_payment: String(gt) }));
-                    }} 
-                    onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
-                </div>
-                <div className="col-span-4">
-                  <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Rate *</label>
-                  <input type="number" value={item.rate_per_unit} placeholder="0" 
-                    onChange={(e) => { 
-                      const newItems = [...items]; 
-                      newItems[idx].rate_per_unit = e.target.value; 
-                      setItems(newItems);
-                      const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
-                      setForm(f => ({ ...f, total_payment: String(gt) }));
-                    }} 
-                    onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
-                    className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
-                </div>
-                {Number(item.quantity) > 0 && Number(item.rate_per_unit) > 0 && (
-                  <div className="col-span-12 text-right">
-                    <p className="text-xs text-brand-text-muted">Line Total: <strong>Rs. {(Number(item.quantity) * Number(item.rate_per_unit)).toLocaleString()}</strong></p>
-                  </div>
-                )}
+          {transactionType === 'purchase' && (
+            <div className="space-y-4 bg-gray-50/50 dark:bg-white/[0.02] p-4 rounded-xl border border-gray-100 dark:border-white/[0.05]">
+              <div className="flex justify-between items-center mb-2">
+                <h3 className="text-sm font-semibold text-brand-text-primary dark:text-white">Purchase Items</h3>
+                <button type="button" onClick={() => setItems([...items, { product_id: '', quantity: '', rate_per_unit: '' }])} className="text-xs font-medium text-gray-900 dark:text-white hover:underline">
+                  + Add Item
+                </button>
               </div>
-            ))}
-            <div className="flex justify-end pt-2 border-t border-gray-200 dark:border-white/[0.1]">
-              <p className="text-sm font-semibold text-brand-text-primary dark:text-white">
-                Grand Total: Rs. {items.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0).toLocaleString()}
-              </p>
+              
+              {items.map((item, idx) => (
+                <div key={idx} className="relative grid grid-cols-12 gap-3 items-end bg-white dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700">
+                  {items.length > 1 && (
+                    <button type="button" onClick={() => {
+                      const newItems = items.filter((_, i) => i !== idx)
+                      setItems(newItems)
+                      const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0)
+                      setForm(f => ({ ...f, total_payment: String(gt) }))
+                    }} className="absolute -top-2 -right-2 w-6 h-6 bg-red-100 text-red-600 rounded-full flex items-center justify-center hover:bg-red-200">
+                      ×
+                    </button>
+                  )}
+                  <div className="col-span-5">
+                    <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Product *</label>
+                    <select value={item.product_id} onChange={(e) => { const newItems = [...items]; newItems[idx].product_id = e.target.value; setItems(newItems); }}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white">
+                      <option value="">Select Product</option>
+                      {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="col-span-3">
+                    <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Qty * {(() => { const p = products.find(p => p.id === item.product_id); return p?.unit ? <span className="text-brand-text-muted font-normal">({p.unit})</span> : null })()}</label>
+                    <input type="number" value={item.quantity} placeholder="0" 
+                      onChange={(e) => { 
+                        const newItems = [...items]; 
+                        newItems[idx].quantity = e.target.value; 
+                        setItems(newItems);
+                        const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
+                        setForm(f => ({ ...f, total_payment: String(gt) }));
+                      }} 
+                      onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
+                  </div>
+                  <div className="col-span-4">
+                    <label className="block text-xs font-medium text-brand-text-primary dark:text-gray-300 mb-1">Rate *</label>
+                    <input type="number" value={item.rate_per_unit} placeholder="0" 
+                      onChange={(e) => { 
+                        const newItems = [...items]; 
+                        newItems[idx].rate_per_unit = e.target.value; 
+                        setItems(newItems);
+                        const gt = newItems.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0);
+                        setForm(f => ({ ...f, total_payment: String(gt) }));
+                      }} 
+                      onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                      className="w-full px-2 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-sm text-gray-900 dark:text-white no-spinner" />
+                  </div>
+                  {Number(item.quantity) > 0 && Number(item.rate_per_unit) > 0 && (
+                    <div className="col-span-12 text-right">
+                      <p className="text-xs text-brand-text-muted">Line Total: <strong>Rs. {(Number(item.quantity) * Number(item.rate_per_unit)).toLocaleString()}</strong></p>
+                    </div>
+                  )}
+                </div>
+              ))}
+              <div className="flex justify-end pt-2 border-t border-gray-200 dark:border-white/[0.1]">
+                <p className="text-sm font-semibold text-brand-text-primary dark:text-white">
+                  Grand Total: Rs. {items.reduce((sum, it) => sum + (Number(it.quantity) * Number(it.rate_per_unit)), 0).toLocaleString()}
+                </p>
+              </div>
             </div>
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Total Payment *</label>
-              <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Paid Amount *</label>
-            <input type="number" value={form.paid_amount} placeholder="0" onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
-          </div>
-          {remainingBalance >= 0 && (
-            <p className="text-sm text-brand-text-muted">Remaining balance: <strong className={remainingBalance === 0 ? 'text-green-600' : 'text-orange-600'}>Rs. {remainingBalance.toLocaleString()}</strong></p>
           )}
+
+          {transactionType === 'payment' ? (
+            <div>
+              <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Amount *</label>
+              <input type="number" value={form.paid_amount} placeholder="0" onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Total Payment *</label>
+                <input type="number" value={form.total_payment} placeholder="0" onChange={(e) => setForm({ ...form, total_payment: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Paid Amount *</label>
+                <input type="number" value={form.paid_amount} placeholder="0" onChange={(e) => setForm({ ...form, paid_amount: e.target.value })} onWheel={(e) => e.currentTarget.blur()} onFocus={(e) => e.target.select()}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
+              </div>
+              {remainingBalance >= 0 && (
+                <p className="text-sm text-brand-text-muted">Remaining balance: <strong className={remainingBalance === 0 ? 'text-green-600' : 'text-orange-600'}>Rs. {remainingBalance.toLocaleString()}</strong></p>
+              )}
+            </>
+          )}
+
           <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Purchase Date *</label>
+            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">{transactionType === 'payment' ? 'Payment' : 'Purchase'} Date *</label>
             <DateTimeInput value={form.transaction_datetime} onChange={(v) => setForm({ ...form, transaction_datetime: v })}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
+
+          {transactionType === 'purchase' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Payment Due Date <span className="text-brand-text-muted font-normal text-xs">(optional — leave blank if not on credit)</span></label>
+                <DateInput value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+                {form.due_date && form.transaction_datetime && toISO(form.due_date) < toISO(form.transaction_datetime.split(' ')[0]) && (
+                  <p className="text-xs text-red-500 mt-1">Due date cannot be earlier than the purchase date</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Vehicle Number</label>
+                <input type="text" value={form.vehicle_number} onChange={(e) => setForm({ ...form, vehicle_number: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
+              </div>
+            </>
+          )}
+
           <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Payment Due Date <span className="text-brand-text-muted font-normal text-xs">(optional — leave blank if not on credit)</span></label>
-            <DateInput value={form.due_date} onChange={(v) => setForm({ ...form, due_date: v })}
+            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description {transactionType === 'payment' && <span className="text-brand-text-muted font-normal text-xs">(type @ to mention a customer)</span>}</label>
+            <input ref={descRef} type="text" value={form.description} onChange={(e) => handleDescChange(e.target.value)}
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-            {form.due_date && form.transaction_datetime && toISO(form.due_date) < toISO(form.transaction_datetime.split(' ')[0]) && (
-              <p className="text-xs text-red-500 mt-1">Due date cannot be earlier than the purchase date</p>
+            {mentionOpen && filteredCustomers.length > 0 && mentionRect && createPortal(
+              <div style={{ position: 'fixed', top: mentionRect.top, left: mentionRect.left, width: mentionRect.width, zIndex: 9999 }}
+                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg max-h-40 overflow-y-auto">
+                {filteredCustomers.map((c, i) => (
+                  <button key={c.id} type="button" onClick={() => selectCustomer(c)}
+                    className={'w-full text-left px-3 py-2 text-sm text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-700 ' + (i === mentionCursor ? 'bg-gray-100 dark:bg-gray-700' : '')}>
+                    {c.name}
+                  </button>
+                ))}
+              </div>,
+              document.body
             )}
           </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Vehicle Number</label>
-            <input type="text" value={form.vehicle_number} onChange={(e) => setForm({ ...form, vehicle_number: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Description</label>
-            <input type="text" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })}
-              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
-          </div>
+
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleSubmit} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90">Save</button>
+            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleSubmit} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90">{transactionType === 'payment' ? 'Record Payment' : 'Save'}</button>
           </div>
         </div>
       </Modal>

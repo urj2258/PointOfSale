@@ -98,14 +98,14 @@ export default function Dashboard() {
 
         <div className="flex flex-wrap items-center gap-3">
           {/* Segmented pill control */}
-          <div className="flex items-center bg-white/40 dark:bg-white/[0.06] backdrop-blur-sm border border-white/30 dark:border-white/[0.1] rounded-xl p-1 gap-0.5">
+          <div className="flex items-center bg-brand-card dark:bg-white/[0.06] border-brand-border dark:border-white/[0.1] rounded-xl p-1 gap-0.5">
             {PERIODS.map(p => (
               <button
                 key={p.value}
                 onClick={() => setPeriod(p.value)}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                   period === p.value
-                    ? 'bg-brand-primary text-gray-900 shadow-sm'
+                    ? 'bg-[#6B7280] text-white shadow-sm'
                     : 'text-brand-text-muted hover:text-brand-text-primary dark:hover:text-white'
                 }`}
               >
@@ -132,7 +132,7 @@ export default function Dashboard() {
               />
               <button
                 onClick={load}
-                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-brand-primary text-gray-900 hover:opacity-90 transition-opacity"
+                className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-[#6B7280] text-white hover:opacity-90 transition-opacity"
               >
                 Apply
               </button>
@@ -160,7 +160,7 @@ export default function Dashboard() {
               { label: 'Inventory Items',  value: stats.inventoryCount, color: 'text-purple-500', bg: 'bg-purple-500/10' },
               { label: 'Low Stock Items',  value: stats.lowStockCount,  color: 'text-orange-500', bg: 'bg-orange-500/10' },
             ].map(card => (
-              <div key={card.label} className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-5">
+              <div key={card.label} className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
                 <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${card.bg} mb-3`}>
                   <span className={`text-sm font-bold ${card.color}`}>#</span>
                 </div>
@@ -198,7 +198,7 @@ export default function Dashboard() {
                 icon: '−',
               },
             ].map(card => (
-              <div key={card.label} className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-5">
+              <div key={card.label} className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
                 <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${card.bg} mb-3`}>
                   <span className={`text-sm font-bold ${card.color}`}>{card.icon}</span>
                 </div>
@@ -215,72 +215,20 @@ export default function Dashboard() {
             ))}
           </div>
 
-          {/* ── Invoice status pills ───────────────────────────────────── */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { label: 'Pending Customer Invoices', value: stats.pendingInvoices,        color: 'text-amber-500',  bg: 'bg-amber-500/10' },
-              // { label: 'Overdue Customer Invoices', value: stats.overdueInvoices,        color: 'text-red-500',    bg: 'bg-red-500/10' },
-              { label: 'Pending Vendor Invoices',   value: stats.pendingVendorInvoices,  color: 'text-amber-500',  bg: 'bg-amber-500/10' },
-              // { label: 'Overdue Vendor Invoices',   value: stats.overdueVendorInvoices,  color: 'text-red-500',    bg: 'bg-red-500/10' },
-            ].map(card => (
-              <div key={card.label} className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-4 flex items-center gap-3">
-                <div className={`flex-shrink-0 w-9 h-9 rounded-xl ${card.bg} flex items-center justify-center`}>
-                  <span className={`text-base font-bold ${card.color}`}>{card.value}</span>
-                </div>
-                <p className="text-xs text-brand-text-muted leading-tight">{card.label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* ── Recent Transactions + Low Stock ─────────────────────────── */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-5">
-              <h2 className="text-base font-semibold text-brand-text-primary dark:text-white mb-4">
-                Recent Transactions
-                {period !== 'day' && (
-                  <span className="ml-2 text-xs font-normal text-brand-text-muted">
-                    ({fmtDate(stats.periodStart)} – {fmtDate(stats.periodEnd)})
+          <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
+            <h2 className="text-base font-semibold text-brand-text-primary dark:text-white mb-4">Low Stock Alert</h2>
+            <div className="space-y-1">
+              {stats.lowStockItems.length === 0 && (
+                <p className="text-sm text-brand-text-muted py-4 text-center">All items are well stocked ✓</p>
+              )}
+              {stats.lowStockItems.map(item => (
+                <div key={item.id} className="flex items-center justify-between py-2 border-b border-white/10 dark:border-white/[0.04] last:border-0">
+                  <span className="text-sm text-brand-text-primary dark:text-white">{item.name}</span>
+                  <span className="text-sm font-semibold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-full">
+                    {item.quantity} {item.unit}
                   </span>
-                )}
-              </h2>
-              <div className="space-y-1">
-                {stats.recentTransactions.length === 0 && (
-                  <p className="text-sm text-brand-text-muted py-4 text-center">No transactions in this period</p>
-                )}
-                {stats.recentTransactions.map((t, i) => (
-                  <div key={i} className="flex items-center justify-between py-2 border-b border-white/10 dark:border-white/[0.04] last:border-0">
-                    <div className="flex items-center gap-3">
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                        t.type === 'Sale' ? 'bg-green-500/10 text-green-600' : 'bg-blue-500/10 text-blue-500'
-                      }`}>{t.type}</span>
-                      <div>
-                        <p className="text-sm text-brand-text-primary dark:text-white leading-tight">{t.party}</p>
-                        <p className="text-xs text-brand-text-muted">{new Date(t.transaction_datetime).toLocaleDateString()}</p>
-                      </div>
-                    </div>
-                    <span className="text-sm font-semibold text-brand-text-primary dark:text-white">
-                      Rs. {t.amount.toLocaleString()}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-5">
-              <h2 className="text-base font-semibold text-brand-text-primary dark:text-white mb-4">Low Stock Alert</h2>
-              <div className="space-y-1">
-                {stats.lowStockItems.length === 0 && (
-                  <p className="text-sm text-brand-text-muted py-4 text-center">All items are well stocked ✓</p>
-                )}
-                {stats.lowStockItems.map(item => (
-                  <div key={item.id} className="flex items-center justify-between py-2 border-b border-white/10 dark:border-white/[0.04] last:border-0">
-                    <span className="text-sm text-brand-text-primary dark:text-white">{item.name}</span>
-                    <span className="text-sm font-semibold text-orange-500 bg-orange-500/10 px-2 py-0.5 rounded-full">
-                      {item.quantity} {item.unit}
-                    </span>
-                  </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
           </div>
         </>

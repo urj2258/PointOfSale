@@ -5,13 +5,7 @@ import crypto from 'crypto';
 import { insertCustomerInTx } from './customerRepository.js';
 import ExcelJS from 'exceljs';
 import path from 'path';
-
-const C = {
-  dark: 'FF111827', blue: 'FF2563EB', bluePale: 'FFDBEAFE',
-  green: 'FF059669', red: 'FFDC2626',
-  greenBg: 'FFD1FAE5', redBg: 'FFFEE2E2', grayBg: 'FFF9FAFB',
-  border: 'FFE5E7EB', white: 'FFFFFFFF', muted: 'FF6B7280',
-};
+import { BUSINESS_NAME, BUSINESS_PHONE, C } from '../constants.js';
 
 function itemsAreEqual(
   oldItems: { product_id: string; quantity: number }[],
@@ -34,11 +28,13 @@ export interface CustomerLedgerRow {
   total_payment: number
   paid_amount: number
   remaining_balance: number
+  transaction_type: string
   created_at: string
   updated_at: string
   deleted_at: string | null
   synced: number
   invoice_id: string | null
+  linked_entry_id: string | null
 }
 
 function syncCustomerInvoiceFromLedger(db: Database.Database, invoiceId: string, now: string) {
@@ -87,7 +83,9 @@ export function getCustomerLedgerEntries(customerId?: string, dateFrom?: string,
 
   const data = db.prepare(`
     SELECT cl.*, c.name as customer_name,
+           c.opening_balance + SUM(cl.total_payment - cl.paid_amount) OVER (PARTITION BY cl.customer_id ORDER BY cl.transaction_datetime ASC, cl.id ASC) as running_balance,
            inv.due_date as invoice_due_date,
+           inv.invoice_number,
            (SELECT group_concat(i.name, ', ') FROM invoice_items ii JOIN inventory i ON i.id = ii.product_id WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as product_name,
            (SELECT SUM(quantity) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as quantity,
            (SELECT AVG(rate_per_unit) FROM invoice_items ii WHERE ii.invoice_id = cl.invoice_id AND ii.deleted_at IS NULL) as rate_per_unit
@@ -95,11 +93,16 @@ export function getCustomerLedgerEntries(customerId?: string, dateFrom?: string,
     LEFT JOIN customers c ON c.id = cl.customer_id
     LEFT JOIN invoices inv ON inv.id = cl.invoice_id
     ${where}
-    ORDER BY cl.transaction_datetime DESC
+    ORDER BY cl.transaction_datetime ASC, cl.id ASC
     LIMIT ? OFFSET ?
-  `).all(...params, limit, offset) as (CustomerLedgerRow & { customer_name: string; product_name: string; quantity: number; rate_per_unit: number; invoice_due_date: string | null })[];
+  `).all(...params, limit, offset) as (CustomerLedgerRow & { customer_name: string; product_name: string; quantity: number; rate_per_unit: number; running_balance: number; invoice_due_date: string | null; invoice_number: string | null })[];
 
-  return { data, total: countRow.total, page, limit };
+  const parsed = data.map(row => ({
+    ...row,
+    running_balance: row.running_balance ?? 0,
+  }));
+
+  return { data: parsed, total: countRow.total, page, limit };
 }
 
 export function getCustomerLedgerById(id: string) {
@@ -118,7 +121,7 @@ export function getCustomerLedgerById(id: string) {
 }
 
 export function createMultiItemSale(
-  customer: { id?: string; name: string; phone: string; address: string; shop_name?: string },
+  customer: { id?: string; name: string; phone: string; address: string; shop_name?: string; opening_balance?: number },
   sale: {
     items: { productId: string; quantity: number; ratePerUnit: number }[];
     transactionDatetime: string; totalPayment: number; paidAmount: number;
@@ -136,7 +139,7 @@ export function createMultiItemSale(
   const transaction = db.transaction(() => {
     // 1. Insert the new customer if no ID was provided
     if (!customer.id) {
-      insertCustomerInTx(db, customerId, now, customer.name, customer.phone, customer.address, customer.shop_name);
+      insertCustomerInTx(db, customerId, now, customer.name, customer.phone, customer.address, customer.shop_name, customer.opening_balance ?? 0);
     }
 
     // 2. Create invoice
@@ -292,6 +295,22 @@ export function softDeleteCustomerLedgerEntry(id: string) {
         .run(now, now, entry.invoice_id);
     }
 
+    // Cascade: delete linked vendor_ledger payment entry (if any)
+    if (entry.linked_entry_id) {
+      const linked = db.prepare('SELECT id, vendor_invoice_id, deleted_at FROM vendor_ledger WHERE id = ?').get(entry.linked_entry_id) as { id: string; vendor_invoice_id: string | null; deleted_at: string | null } | undefined;
+      if (linked && !linked.deleted_at) {
+        if (linked.vendor_invoice_id) {
+          const linkedItems = db.prepare('SELECT product_id, quantity FROM vendor_invoice_items WHERE vendor_invoice_id = ? AND deleted_at IS NULL').all(linked.vendor_invoice_id) as { product_id: string; quantity: number }[];
+          for (const item of linkedItems) {
+            db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?').run(item.quantity, now, item.product_id);
+          }
+          db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL').run(now, now, linked.vendor_invoice_id);
+          db.prepare('UPDATE vendor_invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ? AND deleted_at IS NULL').run(now, now, linked.vendor_invoice_id);
+        }
+        softDeleteRow(db, 'vendor_ledger', entry.linked_entry_id);
+      }
+    }
+
     // Soft-delete the ledger entry itself (last)
     softDeleteRow(db, 'customer_ledger', id);
   });
@@ -339,6 +358,13 @@ export function linkEntriesToInvoice(entryIds: string[], invoiceId: string) {
 export async function exportCustomerLedgerExcel(customerId: string, fromDate?: string, toDate?: string, exportDir?: string): Promise<{ buffer: Buffer; filePath: string }> {
   const db = getDatabase();
 
+  const customer = db.prepare('SELECT name, shop_name, opening_balance FROM customers WHERE id = ?').get(customerId) as { name: string; shop_name: string | null; opening_balance: number } | undefined;
+  if (!customer) throw new Error('Customer not found');
+
+  const customerName = customer.name;
+  const shopName = customer.shop_name;
+  const openingBalance = customer.opening_balance;
+
   let where = 'WHERE cl.deleted_at IS NULL AND cl.customer_id = ?';
   const params: unknown[] = [customerId];
 
@@ -359,14 +385,12 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     LEFT JOIN customers c ON c.id = cl.customer_id
     LEFT JOIN invoices inv ON inv.id = cl.invoice_id
     ${where}
-    ORDER BY cl.transaction_datetime ASC
+    ORDER BY cl.transaction_datetime ASC, cl.id ASC
   `).all(...params) as (CustomerLedgerRow & { customer_name: string; invoice_number: string | null; quantity: number | null; rate_per_unit: number | null })[];
 
   if (rows.length === 0) {
     throw new Error('No entries found in this date range');
   }
-
-  const customerName = rows[0].customer_name || 'Customer';
 
   const safeFrom = fromDate ? fromDate.replace(/[^0-9-]/g, '') : '';
   const safeTo = toDate ? toDate.replace(/[^0-9-]/g, '') : '';
@@ -394,29 +418,74 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     { header: 'Balance', key: 'balance', width: 20 },
   ];
 
-  sheet.spliceRows(1, 0, []);
-
+  // Row 1: Business name
   sheet.mergeCells('A1:H1');
-  const title = sheet.getCell('A1');
-  title.value = `Customer Ledger Report`;
+  const businessRow = sheet.getCell('A1');
+  businessRow.value = BUSINESS_NAME;
+  businessRow.font = { name: 'Inter', size: 14, bold: true, color: { argb: C.white } };
+  businessRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
+  businessRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Row 2: Business name & phone
+  sheet.mergeCells('A2:H2');
+  const infoRow = sheet.getCell('A2');
+  infoRow.value = `${BUSINESS_NAME} - ${BUSINESS_PHONE}`;
+  infoRow.font = { name: 'Inter', size: 10, color: { argb: C.white } };
+  infoRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } };
+  infoRow.alignment = { vertical: 'middle', horizontal: 'center' };
+
+  // Row 3: Report title
+  sheet.mergeCells('A3:H3');
+  const title = sheet.getCell('A3');
+  title.value = 'Customer Ledger Report';
   title.font = { name: 'Inter', size: 16, bold: true, color: { argb: C.white } };
   title.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.dark } };
   title.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  sheet.mergeCells('A2:H2');
-  const subtitle = sheet.getCell('A2');
+  // Row 4: Subtitle with customer name, shop name, date range
+  sheet.mergeCells('A4:H4');
+  const subtitle = sheet.getCell('A4');
+  const shopPart = shopName ? ` | ${shopName}` : '';
   if (fromDate && toDate) {
-    subtitle.value = `${customerName} | ${fromDate} → ${toDate}`;
+    subtitle.value = `${customerName}${shopPart} | ${fromDate} \u2192 ${toDate}`;
   } else {
-    subtitle.value = customerName;
+    subtitle.value = `${customerName}${shopPart}`;
   }
   subtitle.font = { name: 'Inter', size: 12, bold: true, color: { argb: C.white } };
   subtitle.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.blue } };
   subtitle.alignment = { vertical: 'middle', horizontal: 'center' };
 
-  // Empty row for spacing
+  // Gap row
   sheet.addRow([]);
 
+  // Opening Balance row
+  const numFmt = '"Rs."#,##0.00';
+  const obSheetRow = sheet.addRow({
+    date: 'Opening Balance',
+    invoice: '',
+    desc: '',
+    qty: '',
+    rate: '',
+    total: '',
+    paid: '',
+    balance: openingBalance,
+  });
+  obSheetRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
+  obSheetRow.getCell('balance').numFmt = numFmt;
+  if (openingBalance > 0) {
+    obSheetRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
+  } else if (openingBalance < 0) {
+    obSheetRow.getCell('balance').font = { color: { argb: C.red } };
+  }
+  obSheetRow.alignment = { vertical: 'middle' };
+  ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
+    obSheetRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.grayBg } };
+  });
+
+  // Gap row
+  sheet.addRow([]);
+
+  // Column headers
   const headerRowObj = sheet.addRow(['Date', 'Invoice #', 'Description', 'Quantity', 'Rate', 'Total Payment', 'Paid Amount', 'Remaining Balance']);
   headerRowObj.font = { name: 'Inter', size: 11, color: { argb: C.muted } };
   headerRowObj.alignment = { vertical: 'middle', horizontal: 'left' };
@@ -431,11 +500,12 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
   headerRowObj.getCell('G').alignment = { horizontal: 'right' };
   headerRowObj.getCell('H').alignment = { horizontal: 'right' };
 
-  const numFmt = '"Rs."#,##0.00';
   let totalPurchases = 0;
   let totalPaid = 0;
+  let runningBalance = openingBalance;
 
   for (const row of rows) {
+    runningBalance += (row.total_payment - row.paid_amount);
     const sheetRow = sheet.addRow({
       date: row.transaction_datetime,
       invoice: row.invoice_number || '-',
@@ -444,9 +514,9 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
       rate: row.rate_per_unit ?? '-',
       total: row.total_payment,
       paid: row.paid_amount,
-      balance: row.remaining_balance,
+      balance: runningBalance,
     });
-    
+
     totalPurchases += row.total_payment;
     totalPaid += row.paid_amount;
 
@@ -455,9 +525,11 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     sheetRow.getCell('total').numFmt = numFmt;
     sheetRow.getCell('paid').numFmt = numFmt;
     sheetRow.getCell('balance').numFmt = numFmt;
-    if (row.remaining_balance > 0) {
+    if (runningBalance > 0) {
       sheetRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
-    } else if (row.remaining_balance === 0) {
+    } else if (runningBalance < 0) {
+      sheetRow.getCell('balance').font = { color: { argb: C.red } };
+    } else {
       sheetRow.getCell('balance').font = { color: { argb: 'FF808080' } };
     }
     sheetRow.alignment = { vertical: 'middle' };
@@ -477,26 +549,173 @@ export async function exportCustomerLedgerExcel(customerId: string, fromDate?: s
     rate: '',
     total: totalPurchases,
     paid: totalPaid,
-    balance: totalPurchases - totalPaid
+    balance: runningBalance,
   });
-  
+
   totalsRow.font = { name: 'Inter', size: 11, bold: true, color: { argb: C.dark } };
   totalsRow.getCell('total').numFmt = numFmt;
   totalsRow.getCell('paid').numFmt = numFmt;
   totalsRow.getCell('balance').numFmt = numFmt;
-  const totalBalance = totalPurchases - totalPaid;
-  if (totalBalance > 0) {
+  if (runningBalance > 0) {
     totalsRow.getCell('balance').font = { color: { argb: 'FF16A34A' } };
-  } else if (totalBalance === 0) {
+  } else if (runningBalance < 0) {
+    totalsRow.getCell('balance').font = { color: { argb: C.red } };
+  } else {
     totalsRow.getCell('balance').font = { color: { argb: 'FF808080' } };
   }
   totalsRow.alignment = { vertical: 'middle', horizontal: 'right' };
   totalsRow.getCell('date').alignment = { horizontal: 'left' };
-  
+
   ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'].forEach(col => {
     totalsRow.getCell(col).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C.bluePale } };
   });
 
   const buffer = await workbook.xlsx.writeBuffer() as unknown as Buffer;
   return { buffer, filePath };
+}
+
+/**
+ * Insert a customer_ledger entry inside an existing transaction.
+ * Does NOT open its own transaction — caller is responsible.
+ */
+export function insertCustomerLedgerEntryInTx(
+  db: Database.Database,
+  id: string,
+  now: string,
+  customerId: string,
+  transactionDatetime: string,
+  totalPayment: number,
+  paidAmount: number,
+  description?: string,
+  transactionType: 'sale' | 'payment' = 'sale'
+): void {
+  const remainingBalance = totalPayment - paidAmount;
+  db.prepare(`
+    INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+      total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, invoice_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, customerId, transactionDatetime, description ?? null, null,
+    totalPayment, paidAmount, Math.abs(remainingBalance), transactionType, now, now, null);
+}
+
+/**
+ * Creates a customer payment entry and optionally a linked vendor ledger entry
+ * (e.g. when the business pays a mill on a customer's behalf).
+ * Both entries are created in a single transaction with mutual linked_entry_id pointers.
+ */
+export function createCustomerPaymentWithVendorRef(
+  customerId: string, transactionDatetime: string,
+  amount: number, description: string, vendorId?: string,
+  vendorDescription?: string
+) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const ledgerId = crypto.randomUUID();
+
+  let vendorLedgerId: string | undefined
+
+  if (vendorId) {
+    const vendor = db.prepare('SELECT name FROM vendors WHERE id = ?').get(vendorId) as { name: string } | undefined;
+    const customer = db.prepare('SELECT name FROM customers WHERE id = ?').get(customerId) as { name: string } | undefined;
+    const vendorName = vendor?.name || '';
+    const customerName = customer?.name || '';
+
+    description = `Paid to mill directly (ref: @${vendorName})`;
+    vendorDescription = `Received from customer (ref: @${customerName})`;
+  }
+
+  const transaction = db.transaction(() => {
+    db.prepare(`
+      INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, invoice_id, linked_entry_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, customerId, transactionDatetime, description, null,
+      0, amount, amount, 'payment', now, now, null, null);
+
+    if (vendorId) {
+      vendorLedgerId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO vendor_ledger (id, vendor_id, transaction_datetime, description, vehicle_number,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, vendor_invoice_id, linked_entry_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(vendorLedgerId, vendorId, transactionDatetime, vendorDescription ?? null, null,
+        0, amount, amount, 'payment', now, now, null, ledgerId);
+
+      db.prepare(`UPDATE customer_ledger SET linked_entry_id = ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(vendorLedgerId, now, ledgerId);
+    }
+  });
+
+  transaction();
+  return getCustomerLedgerById(ledgerId);
+}
+
+export function createCustomerLedgerEntry(
+  customerId: string,
+  transactionDatetime: string,
+  items: { productId: string; quantity: number; ratePerUnit: number }[],
+  totalPayment: number,
+  paidAmount: number,
+  description?: string,
+  vehicleNumber?: string,
+  dueDate?: string,
+  transactionType: 'sale' | 'payment' = 'sale'
+) {
+  const db = getDatabase();
+  const now = new Date().toISOString();
+  const ledgerId = crypto.randomUUID();
+  const remainingBalance = Math.abs(totalPayment - paidAmount);
+
+  if (transactionType === 'payment') {
+    db.prepare(`
+      INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, invoice_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, customerId, transactionDatetime, description ?? null, null,
+      0, paidAmount, paidAmount, 'payment', now, now, null);
+    return getCustomerLedgerById(ledgerId);
+  }
+
+  // Sale entry: create invoice + items + deduct stock
+  const invoiceId = crypto.randomUUID();
+  const transaction = db.transaction(() => {
+    const invoiceTotal = items.reduce((sum, it) => sum + (it.quantity * it.ratePerUnit), 0);
+    const invoiceNumber = `INV-${Date.now()}`;
+    const resolvedDueDate = dueDate || transactionDatetime.split('T')[0];
+
+    db.prepare(`
+      INSERT INTO invoices (id, customer_id, invoice_number, issue_date, due_date, subtotal, total, paid_amount, remaining_balance, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(invoiceId, customerId, invoiceNumber, transactionDatetime.split('T')[0], resolvedDueDate, invoiceTotal, invoiceTotal, paidAmount, invoiceTotal - paidAmount, (invoiceTotal - paidAmount) <= 0 ? 'Paid' : 'Pending', now, now);
+
+    const checkStock = db.prepare('SELECT name, quantity FROM inventory WHERE id = ? AND deleted_at IS NULL');
+    for (const item of items) {
+      const row = checkStock.get(item.productId) as { name: string; quantity: number } | undefined;
+      if (!row) throw new Error(`Product not found in inventory (id: ${item.productId})`);
+      if (item.quantity > row.quantity) {
+        throw new Error(`Insufficient stock for "${row.name}". Available: ${row.quantity}, Requested: ${item.quantity}`);
+      }
+    }
+
+    for (const item of items) {
+      const itemId = crypto.randomUUID();
+      db.prepare(`
+        INSERT INTO invoice_items (id, invoice_id, product_id, quantity, rate_per_unit, total, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(itemId, invoiceId, item.productId, item.quantity, item.ratePerUnit, item.quantity * item.ratePerUnit, now, now);
+      const result = db.prepare(`UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?`)
+        .run(item.quantity, now, item.productId);
+      if (result.changes === 0) throw new Error('Product not found in inventory');
+    }
+
+    db.prepare(`
+      INSERT INTO customer_ledger (id, customer_id, transaction_datetime, description, vehicle_number,
+        total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at, invoice_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(ledgerId, customerId, transactionDatetime, description ?? null, vehicleNumber ?? null,
+      totalPayment, paidAmount, remainingBalance, 'sale', now, now, invoiceId);
+  });
+
+  transaction();
+  return getCustomerLedgerById(ledgerId);
 }

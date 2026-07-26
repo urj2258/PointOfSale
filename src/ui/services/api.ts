@@ -4,18 +4,20 @@ export const api = {
   vendors: {
     list: (search?: string, page?: number, limit?: number) => e.vendors.list(search, page, limit),
     get: (id: string) => e.vendors.get(id),
-    create: (name: string, phone?: string, address?: string, millName?: string) => e.vendors.create(name, phone, address, millName),
-    update: (id: string, name: string, phone?: string, address?: string, millName?: string) => e.vendors.update(id, name, phone, address, millName),
+    create: (name: string, phone?: string, address?: string, millName?: string, openingBalance?: number) => e.vendors.create(name, phone, address, millName, openingBalance),
+    update: (id: string, name: string, phone?: string, address?: string, millName?: string, openingBalance?: number) => e.vendors.update(id, name, phone, address, millName, openingBalance),
     delete: (id: string) => e.vendors.delete(id),
     outstanding: (id: string) => e.vendors.outstanding(id),
+    runningBalance: (id: string) => e.vendors.runningBalance(id),
   },
   customers: {
     list: (search?: string, page?: number, limit?: number) => e.customers.list(search, page, limit),
     get: (id: string) => e.customers.get(id),
-    create: (name: string, phone?: string, address?: string, shopName?: string) => e.customers.create(name, phone, address, shopName),
-    update: (id: string, name: string, phone?: string, address?: string, shopName?: string) => e.customers.update(id, name, phone, address, shopName),
+    create: (name: string, phone?: string, address?: string, shopName?: string, openingBalance?: number) => e.customers.create(name, phone, address, shopName, openingBalance),
+    update: (id: string, name: string, phone?: string, address?: string, shopName?: string, openingBalance?: number) => e.customers.update(id, name, phone, address, shopName, openingBalance),
     delete: (id: string) => e.customers.delete(id),
     outstanding: (id: string) => e.customers.outstanding(id),
+    runningBalance: (id: string) => e.customers.runningBalance(id),
   },
   inventory: {
     list: (search?: string, page?: number, limit?: number) => e.inventory.list(search, page, limit),
@@ -29,9 +31,9 @@ export const api = {
   vendorLedger: {
     list: (vendorId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.vendorLedger.list(vendorId, dateFrom, dateTo, page, limit),
     get: (id: string) => e.vendorLedger.get(id),
-    create: (vendorId: string, transactionDatetime: string, items: { productId: string; quantity: number; ratePerUnit: number }[], totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string) => e.vendorLedger.create(vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate),
+    create: (vendorId: string, transactionDatetime: string, items: { productId: string; quantity: number; ratePerUnit: number }[], totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string, transactionType?: string, taggedCustomerId?: string) => e.vendorLedger.create(vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate, transactionType, taggedCustomerId),
     createWithNewVendor: (
-      vendorData: { name: string; phone: string; address: string; mill_name?: string },
+      vendorData: { name: string; phone: string; address: string; mill_name?: string; opening_balance?: number },
       purchaseData: { items: { productId: string; quantity: number; ratePerUnit: number }[]; transactionDatetime: string; totalPayment: number; paidAmount: number; description?: string; vehicleNumber?: string; dueDate?: string }
     ) => e.vendorLedger.createWithNewVendor(vendorData, purchaseData),
     update: (id: string, vendorId: string, transactionDatetime: string, items: { productId: string; quantity: number; ratePerUnit: number }[], totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string) => e.vendorLedger.update(id, vendorId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate),
@@ -43,8 +45,9 @@ export const api = {
     customerLedger: {
       list: (customerId?: string, dateFrom?: string, dateTo?: string, page?: number, limit?: number) => e.customerLedger.list(customerId, dateFrom, dateTo, page, limit),
       get: (id: string) => e.customerLedger.get(id),
+      create: (customerId: string, transactionDatetime: string, items: { productId: string; quantity: number; ratePerUnit: number }[], totalPayment: number, paidAmount: number, description?: string, vehicleNumber?: string, dueDate?: string, transactionType?: string, taggedVendorId?: string) => e.customerLedger.create(customerId, transactionDatetime, items, totalPayment, paidAmount, description, vehicleNumber, dueDate, transactionType, taggedVendorId),
       createMultiItem: (
-        customerData: { id?: string; name: string; phone: string; address: string; shop_name?: string },
+        customerData: { id?: string; name: string; phone: string; address: string; shop_name?: string; opening_balance?: number },
         saleData: { items: { productId: string; quantity: number; ratePerUnit: number }[]; transactionDatetime: string; totalPayment: number; paidAmount: number; description?: string; vehicleNumber?: string; dueDate?: string }
       ) => e.customerLedger.createMultiItem(customerData, saleData),
       updateMultiItem: (id: string, customerId: string, saleData: { items: { productId: string; quantity: number; ratePerUnit: number }[]; transactionDatetime: string; totalPayment: number; paidAmount: number; description?: string; vehicleNumber?: string; dueDate?: string }) => e.customerLedger.updateMultiItem(id, customerId, saleData),

@@ -1,22 +1,14 @@
 export const brandColors = {
   primary: {
-    50: '#F9FEE8',
-    400: '#D8F03E',
-    500: '#D6F44A',
-    900: '#384412',
-  },
-  secondary: {
-    400: '#A286FF',
-    500: '#8C6CF8',
-    900: '#2B1F59',
+    500: '#6B7280',
   },
   gray: {
-    50: '#F7F7F7',
-    100: '#F1F1F1',
-    500: '#8D8D8D',
-    600: '#6A6A6A',
-    700: '#4A4A4A',
-    900: '#181818',
+    50: '#F3F4F6',
+    100: '#E5E7EB',
+    500: '#9CA3AF',
+    600: '#6B7280',
+    700: '#4B5563',
+    900: '#111827',
   },
 }
 
@@ -39,13 +31,13 @@ export const radii = {
 
 export const semanticTokens = {
   light: {
-    bg: brandColors.gray[50],
+    bg: '#F3F4F6',
     surface: '#FFFFFF',
-    card: '#FFFFFF',
-    border: brandColors.gray[100],
-    textPrimary: brandColors.gray[900],
-    textSecondary: brandColors.gray[600],
-    textMuted: brandColors.gray[500],
+    card: '#F5F5F6',
+    border: '#E5E7EB',
+    textPrimary: '#111827',
+    textSecondary: '#6B7280',
+    textMuted: '#9CA3AF',
   },
   dark: {
     bg: '#101214',

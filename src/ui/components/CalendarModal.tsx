@@ -77,7 +77,7 @@ export default function CalendarModal({ open, onClose }: Props) {
                 className={`py-1.5 text-sm rounded-full transition-colors ${
                   d === null ? '' :
                   d === today && month === now.getMonth() && year === now.getFullYear()
-                    ? 'bg-brand-primary text-gray-900 font-semibold'
+                    ? 'bg-[#6B7280] text-white font-semibold'
                     : 'text-brand-text-secondary hover:bg-white/30 dark:hover:bg-white/[0.06]'
                 }`}
               >

@@ -9,8 +9,8 @@ import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import toast from 'react-hot-toast'
 
-type Form = { name: string; phone: string; address: string; mill_name: string }
-type FieldErrors = { name?: string; phone?: string; address?: string; mill_name?: string }
+type Form = { name: string; phone: string; address: string; mill_name: string; obAmount: string; obDirection: 'mill_owes_us' | 'we_owe_mill' }
+type FieldErrors = { name?: string; phone?: string; address?: string; mill_name?: string; obAmount?: string; obDirection?: string }
 
 function validateField<K extends keyof Form>(field: K, value: string): string | undefined {
   const v = value.trim()
@@ -47,6 +47,12 @@ function validateField<K extends keyof Form>(field: K, value: string): string | 
       if (v.length < 3 || v.length > 100) return 'Mill name must be 3-100 characters.'
       return undefined
     }
+    case 'obAmount': {
+      if (!v) return undefined
+      const n = Number(v)
+      if (isNaN(n) || n < 0) return 'Must be a valid positive number or leave as 0.'
+      return undefined
+    }
   }
 }
 
@@ -54,7 +60,13 @@ function isFormValid(form: Form): boolean {
   return !validateField('name', form.name) &&
     !validateField('phone', form.phone) &&
     !validateField('address', form.address) &&
-    !validateField('mill_name', form.mill_name)
+    !validateField('mill_name', form.mill_name) &&
+    !validateField('obAmount', form.obAmount)
+}
+
+function computeOpeningBalance(form: Form): number {
+  const amount = Number(form.obAmount) || 0
+  return form.obDirection === 'mill_owes_us' ? amount : -amount
 }
 
 export default function VendorsPage() {
@@ -66,7 +78,7 @@ export default function VendorsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Vendor | null>(null)
 
-  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', mill_name: '' })
+  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -85,7 +97,7 @@ export default function VendorsPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', phone: '', address: '', mill_name: '' })
+    setForm({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -94,7 +106,10 @@ export default function VendorsPage() {
 
   const openEdit = (vendor: Vendor) => {
     setEditing(vendor)
-    setForm({ name: vendor.name, phone: vendor.phone || '', address: vendor.address || '', mill_name: vendor.mill_name || '' })
+    const ob = vendor.opening_balance ?? 0
+    const obDirection = ob >= 0 ? 'mill_owes_us' as const : 'we_owe_mill' as const
+    const obAmount = String(Math.abs(ob))
+    setForm({ name: vendor.name, phone: vendor.phone || '', address: vendor.address || '', mill_name: vendor.mill_name || '', obAmount, obDirection })
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -120,19 +135,21 @@ export default function VendorsPage() {
       phone: validateField('phone', form.phone),
       address: validateField('address', form.address),
       mill_name: validateField('mill_name', form.mill_name),
+      obAmount: validateField('obAmount', form.obAmount),
     }
     setFieldErrors(errors)
-    setTouched({ name: true, phone: true, address: true, mill_name: true })
+    setTouched({ name: true, phone: true, address: true, mill_name: true, obAmount: true })
 
     if (Object.values(errors).some(Boolean)) return
 
     setServerError('')
     try {
       let result: any
+      const ob = computeOpeningBalance(form)
       if (editing) {
-        result = await api.vendors.update(editing.id, form.name.trim(), form.phone.trim(), form.address.trim(), form.mill_name.trim() || undefined)
+        result = await api.vendors.update(editing.id, form.name.trim(), form.phone.trim(), form.address.trim(), form.mill_name.trim() || undefined, ob)
       } else {
-        result = await api.vendors.create(form.name.trim(), form.phone.trim(), form.address.trim(), form.mill_name.trim() || undefined)
+        result = await api.vendors.create(form.name.trim(), form.phone.trim(), form.address.trim(), form.mill_name.trim() || undefined, ob)
       }
       if (result?.error) {
         setServerError(result.error)
@@ -169,14 +186,14 @@ export default function VendorsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Vendors</h1>
-        <button onClick={openCreate} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
+        <button onClick={openCreate} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
           Add Vendor
         </button>
       </div>
 
       <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search vendors..." />
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
         <DataTable 
           columns={columns} 
           data={data?.data ?? []} 
@@ -217,9 +234,24 @@ export default function VendorsPage() {
               className={inputClass('mill_name')} placeholder="e.g. Khan Textile Mill" />
             {touched.mill_name && fieldErrors.mill_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.mill_name}</p>}
           </div>
+          <div>
+            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-2">Opening Balance</label>
+            <div className="flex gap-3 items-center">
+              <select value={form.obDirection} onChange={(e) => setForm({ ...form, obDirection: e.target.value as Form['obDirection'] })}
+                className="px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                <option value="mill_owes_us">Mill owes us</option>
+                <option value="we_owe_mill">We owe mill</option>
+              </select>
+              <input type="number" value={form.obAmount} onChange={(e) => setField('obAmount', e.target.value)} onBlur={() => onBlur('obAmount')}
+                onWheel={(e) => e.currentTarget.blur()}
+                placeholder="0"
+                className="w-32 px-3 py-2 rounded-xl border text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] focus:ring-brand-primary/40 no-spinner" />
+            </div>
+            {touched.obAmount && fieldErrors.obAmount && <p className="text-xs text-red-500 mt-1">{fieldErrors.obAmount}</p>}
+          </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
+            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
           </div>
         </div>
       </Modal>

@@ -9,6 +9,7 @@ export interface VendorRow {
   phone: string | null
   address: string | null
   mill_name: string | null
+  opening_balance: number
   created_at: string
   updated_at: string
   deleted_at: string | null
@@ -38,14 +39,14 @@ export function getVendorById(id: string) {
   return db.prepare('SELECT * FROM vendors WHERE id = ? AND deleted_at IS NULL').get(id) as VendorRow | undefined;
 }
 
-export function createVendor(name: string, phone?: string, address?: string, mill_name?: string) {
+export function createVendor(name: string, phone?: string, address?: string, mill_name?: string, opening_balance = 0) {
   const db = getDatabase();
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
   db.prepare(`
-    INSERT INTO vendors (id, name, phone, address, mill_name, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, phone ?? null, address ?? null, mill_name ?? null, now, now);
+    INSERT INTO vendors (id, name, phone, address, mill_name, opening_balance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone ?? null, address ?? null, mill_name ?? null, opening_balance, now, now);
   return getVendorById(id);
 }
 
@@ -60,17 +61,20 @@ export function insertVendorInTx(
   name: string,
   phone: string,
   address: string,
-  mill_name?: string
+  mill_name?: string,
+  opening_balance = 0
 ): void {
   db.prepare(`
-    INSERT INTO vendors (id, name, phone, address, mill_name, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(id, name, phone, address, mill_name ?? null, now, now);
+    INSERT INTO vendors (id, name, phone, address, mill_name, opening_balance, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(id, name, phone, address, mill_name ?? null, opening_balance, now, now);
 }
 
-export function updateVendor(id: string, name: string, phone?: string, address?: string, mill_name?: string) {
+export function updateVendor(id: string, name: string, phone?: string, address?: string, mill_name?: string, opening_balance?: number) {
   const db = getDatabase();
-  updateRow(db, 'vendors', id, { name, phone: phone ?? null, address: address ?? null, mill_name: mill_name ?? null });
+  const updates: Record<string, any> = { name, phone: phone ?? null, address: address ?? null, mill_name: mill_name ?? null };
+  if (opening_balance !== undefined) updates.opening_balance = opening_balance;
+  updateRow(db, 'vendors', id, updates);
   return getVendorById(id);
 }
 
@@ -78,28 +82,43 @@ export function softDeleteVendor(id: string) {
   const db = getDatabase();
   const now = new Date().toISOString();
 
+  const getInvoiceItems = db.prepare(
+    'SELECT product_id, quantity FROM vendor_invoice_items WHERE vendor_invoice_id = ? AND deleted_at IS NULL'
+  );
+  const deductInventory = db.prepare(
+    'UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+  const getInvoices = db.prepare(
+    'SELECT id FROM vendor_invoices WHERE vendor_id = ? AND deleted_at IS NULL'
+  );
+  const softDeleteInvoiceItems = db.prepare(
+    'UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL'
+  );
+  const softDeleteLedger = db.prepare(
+    'UPDATE vendor_ledger SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_id = ?'
+  );
+  const softDeleteVendorRow = db.prepare(
+    'UPDATE vendors SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+  const softDeleteInvoices = db.prepare(
+    'UPDATE vendor_invoices SET deleted_at = ?, updated_at = ?, synced = 0 WHERE id = ?'
+  );
+
   const transaction = db.transaction(() => {
-    const ledgerEntries = db.prepare(
-      'SELECT id, quantity, product_id FROM vendor_ledger WHERE vendor_id = ? AND deleted_at IS NULL'
-    ).all(id) as { id: string; quantity: number; product_id: string }[];
+    softDeleteLedger.run(now, now, id);
 
-    for (const entry of ledgerEntries) {
-      softDeleteRow(db, 'vendor_ledger', entry.id);
-      db.prepare('UPDATE inventory SET quantity = quantity - ?, updated_at = ?, synced = 0 WHERE id = ?')
-        .run(entry.quantity, now, entry.product_id);
-    }
-
-    const invoices = db.prepare(
-      'SELECT id FROM vendor_invoices WHERE vendor_id = ? AND deleted_at IS NULL'
-    ).all(id) as { id: string }[];
+    const invoices = getInvoices.all(id) as { id: string }[];
 
     for (const invoice of invoices) {
-      db.prepare('UPDATE vendor_invoice_items SET deleted_at = ?, updated_at = ?, synced = 0 WHERE vendor_invoice_id = ? AND deleted_at IS NULL')
-        .run(now, now, invoice.id);
-      softDeleteRow(db, 'vendor_invoices', invoice.id);
+      const items = getInvoiceItems.all(invoice.id) as { product_id: string; quantity: number }[];
+      for (const item of items) {
+        deductInventory.run(item.quantity, now, item.product_id);
+      }
+      softDeleteInvoiceItems.run(now, now, invoice.id);
+      softDeleteInvoices.run(now, now, invoice.id);
     }
 
-    softDeleteRow(db, 'vendors', id);
+    softDeleteVendorRow.run(now, now, id);
   });
 
   transaction();
@@ -112,4 +131,16 @@ export function getVendorOutstanding(id: string) {
     FROM vendor_ledger WHERE vendor_id = ? AND deleted_at IS NULL
   `).get(id) as { total: number };
   return row.total;
+}
+
+export function getVendorRunningBalance(id: string): number {
+  const db = getDatabase();
+  const vendor = db.prepare('SELECT opening_balance FROM vendors WHERE id = ? AND deleted_at IS NULL').get(id) as { opening_balance: number } | undefined;
+  if (!vendor) throw new Error('Vendor not found');
+  const row = db.prepare(`
+    SELECT COALESCE(SUM(total_payment), 0) as total_purchases,
+           COALESCE(SUM(paid_amount), 0) as total_paid
+    FROM vendor_ledger WHERE vendor_id = ? AND deleted_at IS NULL
+  `).get(id) as { total_purchases: number; total_paid: number };
+  return vendor.opening_balance - row.total_purchases + row.total_paid;
 }

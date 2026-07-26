@@ -256,20 +256,20 @@ export default function SettingsPage() {
     <div className="space-y-6 max-w-2xl">
       <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Settings</h1>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Account</h2>
         <div className="space-y-2">
           <p className="text-sm text-brand-text-muted">Logged in as <strong className="text-brand-text-primary dark:text-white">{currentUser?.full_name}</strong></p>
           <p className="text-sm text-brand-text-muted">Email: {currentUser?.email}</p>
         </div>
-        <button onClick={logout}
-          className="px-4 py-2 bg-red-500/10 text-red-600 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors">
+          <button onClick={logout}
+          className="px-4 py-2 bg-[#FEE2E2] text-[#DC2626] dark:bg-red-500/10 dark:text-red-600 rounded-xl text-sm font-medium hover:bg-red-500/20 transition-colors">
           Logout
         </button>
       </div>
 
       {ENABLE_SYNC_SECTION && (
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Backup &amp; Sync</h2>
         <p className="text-sm text-brand-text-muted">Sync local data to the cloud database.</p>
         
@@ -316,11 +316,11 @@ export default function SettingsPage() {
 
         <div className="flex flex-wrap gap-3">
           <button onClick={handleSync} disabled={syncing}
-            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
             {syncing ? 'Syncing...' : 'Sync Now'}
           </button>
           <button onClick={handlePull} disabled={pulling}
-            className="px-4 py-2 bg-white/30 dark:bg-white/[0.06] text-brand-text-primary dark:text-white rounded-xl text-sm font-medium border border-white/30 dark:border-white/[0.1] hover:bg-white/50 dark:hover:bg-white/[0.1] transition-colors disabled:opacity-50">
+            className="px-4 py-2 bg-white dark:bg-white/[0.06] text-[#111827] dark:text-white rounded-xl text-sm font-medium border border-[#D1D5DB] dark:border-white/[0.1] hover:bg-gray-50 dark:hover:bg-white/[0.1] transition-colors disabled:opacity-50">
             {pulling ? 'Pulling...' : 'Pull'}
           </button>
           {result && !result.success && !syncing && (
@@ -371,7 +371,7 @@ export default function SettingsPage() {
       </div>
       )}
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Database</h2>
         <p className="text-sm text-brand-text-muted">Export or restore your local database.</p>
         
@@ -391,12 +391,12 @@ export default function SettingsPage() {
 
         <div className="flex flex-wrap gap-3">
           <button onClick={handleExport} disabled={exporting}
-            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
             {exporting ? 'Exporting...' : 'Export Database'}
           </button>
 
           <button onClick={handleImport} disabled={importing}
-            className="px-4 py-2 bg-white/30 dark:bg-white/[0.06] text-brand-text-primary dark:text-white rounded-xl text-sm font-medium border border-white/30 dark:border-white/[0.1] hover:bg-white/50 dark:hover:bg-white/[0.1] transition-colors disabled:opacity-50">
+            className="px-4 py-2 bg-white dark:bg-white/[0.06] text-[#111827] dark:text-white rounded-xl text-sm font-medium border border-[#D1D5DB] dark:border-white/[0.1] hover:bg-gray-50 dark:hover:bg-white/[0.1] transition-colors disabled:opacity-50">
             {importing ? 'Importing...' : 'Import Database'}
           </button>
         </div>
@@ -407,7 +407,7 @@ export default function SettingsPage() {
             {exportPath || 'Desktop (default)'}
           </span>
           <button onClick={handleSelectExportPath}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:text-brand-text-primary hover:bg-white/30 dark:hover:bg-white/[0.08] transition-all shrink-0">
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:text-brand-text-primary hover:bg-gray-50 dark:hover:bg-white/[0.08] transition-all shrink-0">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
@@ -436,7 +436,7 @@ export default function SettingsPage() {
                       {nuking ? 'Deleting...' : 'Yes, Delete Everything'}
                     </button>
                     <button onClick={() => setConfirmNuke(false)}
-                      className="px-3 py-1.5 bg-white/30 dark:bg-white/[0.06] text-brand-text-muted rounded-lg text-xs font-medium hover:bg-white/50 dark:hover:bg-white/[0.1] transition-colors border border-white/30 dark:border-white/[0.1]">
+                      className="px-3 py-1.5 bg-white dark:bg-white/[0.06] text-brand-text-muted rounded-lg text-xs font-medium hover:bg-gray-50 dark:hover:bg-white/[0.1] transition-colors border border-[#D1D5DB] dark:border-white/[0.1]">
                       Cancel
                     </button>
                   </div>
@@ -454,7 +454,7 @@ export default function SettingsPage() {
 
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Appearance</h2>
 
         <div className="flex items-center justify-between pt-1">
@@ -466,7 +466,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <h2 className="text-lg font-semibold text-brand-text-primary dark:text-white">Application</h2>
         <p className="text-sm text-brand-text-muted">POS System v1.0.0</p>
         <p className="text-sm text-brand-text-muted">Database: SQLite (local) &rarr; Turso (cloud)</p>

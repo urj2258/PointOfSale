@@ -33,6 +33,7 @@ export function initDatabase(): Database.Database {
   migrateSchema(db);
   createIndexes(db);
   seedOwner(db);
+  seedExtraUsers(db);
 
   return db;
 }
@@ -91,6 +92,7 @@ function createTables(db: Database.Database): void {
       phone TEXT,
       address TEXT,
       shop_name TEXT,
+      opening_balance REAL NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT NULL,
@@ -118,11 +120,13 @@ function createTables(db: Database.Database): void {
       total_payment REAL NOT NULL CHECK (total_payment >= 0),
       paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
       remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+      transaction_type TEXT NOT NULL DEFAULT 'purchase',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
       vendor_invoice_id TEXT DEFAULT NULL,
+      linked_entry_id TEXT DEFAULT NULL,
       FOREIGN KEY (vendor_id) REFERENCES vendors(id),
       FOREIGN KEY (vendor_invoice_id) REFERENCES vendor_invoices(id)
     );
@@ -172,11 +176,13 @@ function createTables(db: Database.Database): void {
       total_payment REAL NOT NULL CHECK (total_payment >= 0),
       paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
       remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+      transaction_type TEXT NOT NULL DEFAULT 'sale',
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       deleted_at TEXT NULL,
       synced INTEGER NOT NULL DEFAULT 0,
       invoice_id TEXT DEFAULT NULL,
+      linked_entry_id TEXT DEFAULT NULL,
       FOREIGN KEY (customer_id) REFERENCES customers(id),
       FOREIGN KEY (invoice_id) REFERENCES invoices(id)
     );
@@ -304,6 +310,16 @@ function migrateSchema(db: Database.Database): void {
     addColumn('day_closing_reports', 'synced INTEGER NOT NULL DEFAULT 0');
   }
 
+  const vCols = tableCols('vendors');
+  if (!vCols.includes('opening_balance')) {
+    addColumn('vendors', 'opening_balance REAL NOT NULL DEFAULT 0');
+  }
+
+  const cCols = tableCols('customers');
+  if (!cCols.includes('opening_balance')) {
+    addColumn('customers', 'opening_balance REAL NOT NULL DEFAULT 0');
+  }
+
   const userCols = tableCols('users');
   if (!userCols.includes('deleted_at')) {
     addColumn('users', 'deleted_at TEXT NULL');
@@ -374,6 +390,7 @@ function migrateSchema(db: Database.Database): void {
           total_payment REAL NOT NULL CHECK (total_payment >= 0),
           paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
           remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+          transaction_type TEXT NOT NULL DEFAULT 'purchase',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           deleted_at TEXT NULL,
@@ -387,12 +404,12 @@ function migrateSchema(db: Database.Database): void {
       db.exec(`
         INSERT INTO vendor_ledger_new (
           id, vendor_id, transaction_datetime, description, vehicle_number,
-          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at,
           deleted_at, synced, vendor_invoice_id
         )
         SELECT 
           id, vendor_id, transaction_datetime, description, vehicle_number,
-          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          total_payment, paid_amount, remaining_balance, 'purchase', created_at, updated_at,
           deleted_at, synced, vendor_invoice_id
         FROM vendor_ledger
       `);
@@ -401,6 +418,11 @@ function migrateSchema(db: Database.Database): void {
       // 4. Rename new table
       db.exec('ALTER TABLE vendor_ledger_new RENAME TO vendor_ledger');
     })();
+  }
+
+  // Migration: add transaction_type column
+  if (!vlCols.includes('transaction_type')) {
+    addColumn('vendor_ledger', 'transaction_type TEXT NOT NULL DEFAULT \'purchase\'');
   }
 
   const clCols = tableCols('customer_ledger');
@@ -421,6 +443,7 @@ function migrateSchema(db: Database.Database): void {
           total_payment REAL NOT NULL CHECK (total_payment >= 0),
           paid_amount REAL NOT NULL CHECK (paid_amount >= 0),
           remaining_balance REAL NOT NULL CHECK (remaining_balance >= 0),
+          transaction_type TEXT NOT NULL DEFAULT 'sale',
           created_at TEXT NOT NULL,
           updated_at TEXT NOT NULL,
           deleted_at TEXT NULL,
@@ -434,12 +457,12 @@ function migrateSchema(db: Database.Database): void {
       db.exec(`
         INSERT INTO customer_ledger_new (
           id, customer_id, transaction_datetime, description, vehicle_number,
-          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          total_payment, paid_amount, remaining_balance, transaction_type, created_at, updated_at,
           deleted_at, synced, invoice_id
         )
         SELECT 
           id, customer_id, transaction_datetime, description, vehicle_number,
-          total_payment, paid_amount, remaining_balance, created_at, updated_at,
+          total_payment, paid_amount, remaining_balance, 'sale', created_at, updated_at,
           deleted_at, synced, invoice_id
         FROM customer_ledger
       `);
@@ -448,6 +471,11 @@ function migrateSchema(db: Database.Database): void {
       // 4. Rename new table
       db.exec('ALTER TABLE customer_ledger_new RENAME TO customer_ledger');
     })();
+  }
+
+  // Migration: add transaction_type column to customer_ledger
+  if (!clCols.includes('transaction_type')) {
+    addColumn('customer_ledger', 'transaction_type TEXT NOT NULL DEFAULT \'sale\'');
   }
 
   const alCols = tableCols('audit_logs');
@@ -490,6 +518,16 @@ function migrateSchema(db: Database.Database): void {
       db.exec('ALTER TABLE audit_logs_new RENAME TO audit_logs');
     })();
     db.pragma('foreign_keys = ON');
+  }
+
+  // linked_entry_id for cascade delete between vendor_ledger and customer_ledger
+  const vlColsLink = tableCols('vendor_ledger');
+  if (!vlColsLink.includes('linked_entry_id')) {
+    addColumn('vendor_ledger', 'linked_entry_id TEXT DEFAULT NULL');
+  }
+  const clColsLink = tableCols('customer_ledger');
+  if (!clColsLink.includes('linked_entry_id')) {
+    addColumn('customer_ledger', 'linked_entry_id TEXT DEFAULT NULL');
   }
 }
 
@@ -573,4 +611,20 @@ function seedOwner(db: Database.Database): void {
   `).run(crypto.randomUUID(), fullName, email, username, hashedPassword, now, now);
 
   console.log(`Owner seeded: ${email} / ${password}`);
+}
+
+function seedExtraUsers(db: Database.Database): void {
+  const now = new Date().toISOString();
+  const users: { email: string; password: string; fullName: string; username: string }[] = [
+    { email: 'awais@gmail.com', password: 'Awais@1234', fullName: 'Awais', username: 'awais' },
+  ];
+  for (const u of users) {
+    const exists = db.prepare('SELECT COUNT(*) as count FROM users WHERE email = ?').get(u.email) as { count: number };
+    if (exists.count === 0) {
+      const hashed = bcrypt.hashSync(u.password, 10);
+      db.prepare(`INSERT INTO users (id, full_name, email, username, password, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(crypto.randomUUID(), u.fullName, u.email, u.username, hashed, now, now);
+      console.log(`User seeded: ${u.email} / ${u.password}`);
+    }
+  }
 }

@@ -39,7 +39,7 @@ export default function Pagination({ page, total, limit, onChange }: PaginationP
               onClick={() => onChange(pageNum)}
               className={`px-3 py-1.5 text-sm rounded-lg transition-colors ${
                 pageNum === page
-                  ? 'bg-brand-primary text-gray-900'
+                  ? 'bg-[#6B7280] text-white'
                   : 'hover:bg-white/30 dark:hover:bg-white/[0.08] text-brand-text-muted'
               }`}
             >

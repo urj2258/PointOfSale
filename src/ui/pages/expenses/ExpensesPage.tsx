@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from '../../services/api'
 import type { Expense, ExpenseCategory, PaginatedResult } from '../../types'
 import DataTable from '../../components/ui/DataTable'
@@ -53,14 +53,23 @@ export default function ExpensesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [deletingType, setDeletingType] = useState<'expense' | 'category'>('expense')
 
-
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const savedScrollRef = useRef(0)
 
   const loadExpenses = useCallback(async () => {
+    savedScrollRef.current = scrollRef.current?.scrollTop ?? 0
     setLoading(true)
     const result = await api.expenses.list(filterCategory || undefined, filterMonth || undefined, page, 20)
     setData(result)
     setLoading(false)
   }, [filterCategory, filterMonth, page])
+
+  useEffect(() => {
+    if (!loading && savedScrollRef.current > 0) {
+      scrollRef.current?.scrollTo({ top: savedScrollRef.current })
+      savedScrollRef.current = 0
+    }
+  }, [loading])
 
   const loadCategories = useCallback(async () => {
     const result = await api.expenseCategories.list()
@@ -168,14 +177,14 @@ export default function ExpensesPage() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div ref={scrollRef} className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Expenses</h1>
         <div className="flex gap-2">
-          <button onClick={() => setTab('categories')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'categories' ? 'bg-brand-primary text-gray-900' : 'border border-white/30 dark:border-white/[0.1] text-brand-text-muted'}`}>
+          <button onClick={() => setTab('categories')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'categories' ? 'bg-[#6B7280] text-white' : 'border border-\[#D1D5DB\] dark:border-white/\[0.1\] text-brand-text-muted'}`}>
             Categories
           </button>
-          <button onClick={() => setTab('expenses')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'expenses' ? 'bg-brand-primary text-gray-900' : 'border border-white/30 dark:border-white/[0.1] text-brand-text-muted'}`}>
+          <button onClick={() => setTab('expenses')} className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${tab === 'expenses' ? 'bg-[#6B7280] text-white' : 'border border-\[#D1D5DB\] dark:border-white/\[0.1\] text-brand-text-muted'}`}>
             Expenses
           </button>
         </div>
@@ -184,9 +193,9 @@ export default function ExpensesPage() {
       {tab === 'categories' && (
         <div className="space-y-4">
           <div className="flex justify-end">
-            <button onClick={openCreateCat} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90">Add Category</button>
+            <button onClick={openCreateCat} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90">Add Category</button>
           </div>
-          <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+          <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
             <DataTable columns={catColumns} data={categories} onEdit={openEditCat} onDelete={handleDeleteCat} />
           </div>
         </div>
@@ -210,13 +219,13 @@ export default function ExpensesPage() {
             </div>
             {(filterCategory || filterMonth) && (
               <button onClick={() => { setFilterCategory(''); setFilterMonth(''); setPage(1) }}
-                className="px-3 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Clear</button>
+                className="px-3 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Clear</button>
             )}
             <div className="flex-1" />
-            <button onClick={openCreateExpense} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90">Add Expense</button>
+            <button onClick={openCreateExpense} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90">Add Expense</button>
           </div>
 
-          <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+          <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
             <DataTable columns={expenseColumns} data={data?.data ?? []} onEdit={openEditExpense} onDelete={handleDeleteExpense} loading={loading} />
             {data && <Pagination page={data.page} total={data.total} limit={20} onChange={setPage} />}
           </div>
@@ -250,8 +259,8 @@ export default function ExpensesPage() {
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setExpenseModal(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleExpenseSubmit} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90">Save</button>
+            <button onClick={() => setExpenseModal(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleExpenseSubmit} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90">Save</button>
           </div>
         </div>
       </Modal>
@@ -265,8 +274,8 @@ export default function ExpensesPage() {
               className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40" />
           </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setCatModal(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleCatSubmit} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90">Save</button>
+            <button onClick={() => setCatModal(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleCatSubmit} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90">Save</button>
           </div>
         </div>
       </Modal>

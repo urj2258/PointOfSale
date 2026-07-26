@@ -9,8 +9,8 @@ import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import toast from 'react-hot-toast'
 
-type Form = { name: string; phone: string; address: string; shop_name: string }
-type FieldErrors = { name?: string; phone?: string; address?: string; shop_name?: string }
+type Form = { name: string; phone: string; address: string; shop_name: string; obAmount: string; obDirection: 'customer_owes_us' | 'we_owe_customer' }
+type FieldErrors = Record<string, string | undefined>
 
 function validateField<K extends keyof Form>(field: K, value: string): string | undefined {
   const v = value.trim()
@@ -47,6 +47,13 @@ function validateField<K extends keyof Form>(field: K, value: string): string | 
       if (v.length < 3 || v.length > 100) return 'Shop name must be 3-100 characters.'
       return undefined
     }
+    case 'obAmount': {
+      if (!v) return undefined
+      const n = Number(v)
+      if (isNaN(n) || n < 0) return 'Must be a valid positive number or leave as 0.'
+      return undefined
+    }
+    default: return undefined
   }
 }
 
@@ -54,7 +61,8 @@ function isFormValid(form: Form): boolean {
   return !validateField('name', form.name) &&
     !validateField('phone', form.phone) &&
     !validateField('address', form.address) &&
-    !validateField('shop_name', form.shop_name)
+    !validateField('shop_name', form.shop_name) &&
+    !validateField('obAmount', form.obAmount)
 }
 
 export default function CustomersPage() {
@@ -66,7 +74,7 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
 
-  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', shop_name: '' })
+  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', shop_name: '', obAmount: '0', obDirection: 'customer_owes_us' })
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -85,7 +93,7 @@ export default function CustomersPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', phone: '', address: '', shop_name: '' })
+    setForm({ name: '', phone: '', address: '', shop_name: '', obAmount: '0', obDirection: 'customer_owes_us' })
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -94,7 +102,10 @@ export default function CustomersPage() {
 
   const openEdit = (customer: Customer) => {
     setEditing(customer)
-    setForm({ name: customer.name, phone: customer.phone || '', address: customer.address || '', shop_name: customer.shop_name || '' })
+    const ob = customer.opening_balance ?? 0
+    const obDirection = ob >= 0 ? 'customer_owes_us' as const : 'we_owe_customer' as const
+    const obAmount = String(Math.abs(ob))
+    setForm({ name: customer.name, phone: customer.phone || '', address: customer.address || '', shop_name: customer.shop_name || '', obAmount, obDirection })
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -120,19 +131,22 @@ export default function CustomersPage() {
       phone: validateField('phone', form.phone),
       address: validateField('address', form.address),
       shop_name: validateField('shop_name', form.shop_name),
+      obAmount: validateField('obAmount' as any, form.obAmount),
     }
     setFieldErrors(errors)
-    setTouched({ name: true, phone: true, address: true, shop_name: true })
+    setTouched({ name: true, phone: true, address: true, shop_name: true, obAmount: true })
 
     if (Object.values(errors).some(Boolean)) return
 
     setServerError('')
     try {
       let result: any
+      const obAmount = Number(form.obAmount) || 0
+      const openingBalance = form.obDirection === 'customer_owes_us' ? obAmount : -obAmount
       if (editing) {
-        result = await api.customers.update(editing.id, form.name.trim(), form.phone.trim(), form.address.trim(), form.shop_name.trim() || undefined)
+        result = await api.customers.update(editing.id, form.name.trim(), form.phone.trim(), form.address.trim(), form.shop_name.trim() || undefined, openingBalance)
       } else {
-        result = await api.customers.create(form.name.trim(), form.phone.trim(), form.address.trim(), form.shop_name.trim() || undefined)
+        result = await api.customers.create(form.name.trim(), form.phone.trim(), form.address.trim(), form.shop_name.trim() || undefined, openingBalance)
       }
       if (result?.error) {
         setServerError(result.error)
@@ -169,14 +183,14 @@ export default function CustomersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Customers</h1>
-        <button onClick={openCreate} className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
+        <button onClick={openCreate} className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity">
           Add Customer
         </button>
       </div>
 
       <SearchInput value={search} onChange={(v) => { setSearch(v); setPage(1) }} placeholder="Search customers..." />
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
         <DataTable 
           columns={columns} 
           data={data?.data ?? []} 
@@ -217,9 +231,25 @@ export default function CustomersPage() {
               className={inputClass('shop_name')} placeholder="e.g. Khan Electronics" />
             {touched.shop_name && fieldErrors.shop_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.shop_name}</p>}
           </div>
+          <div>
+            <label className="block text-xs font-medium text-brand-text-primary dark:text-white mb-1">Opening Balance</label>
+            <div className="flex gap-2 items-center">
+              <select value={form.obDirection} onChange={e => setField('obDirection' as any, e.target.value)}
+                className="px-2 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40">
+                <option value="customer_owes_us">Customer owes us</option>
+                <option value="we_owe_customer">We owe customer</option>
+              </select>
+              <input type="number" value={form.obAmount} placeholder="0"
+                onChange={e => setField('obAmount' as any, e.target.value)}
+                onBlur={() => onBlur('obAmount' as any)}
+                onWheel={(e) => e.currentTarget.blur()}
+                className="w-28 px-3 py-2 rounded-xl border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.04] text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-brand-primary/40 no-spinner" />
+            </div>
+            {touched.obAmount && fieldErrors.obAmount && <p className="text-xs text-red-500 mt-1">{fieldErrors.obAmount}</p>}
+          </div>
           <div className="flex justify-end gap-3 pt-2">
-            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-white/30 dark:border-white/[0.1] text-brand-text-muted hover:bg-white/30 dark:hover:bg-white/[0.08]">Cancel</button>
-            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-brand-primary text-gray-900 font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
+            <button onClick={() => setModalOpen(false)} className="px-4 py-2 text-sm rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] text-brand-text-muted hover:bg-gray-50 dark:hover:bg-white/[0.08]">Cancel</button>
+            <button onClick={handleSubmit} disabled={!isFormValid(form)} className="px-4 py-2 text-sm rounded-xl bg-[#6B7280] text-white font-medium hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed">Save</button>
           </div>
         </div>
       </Modal>

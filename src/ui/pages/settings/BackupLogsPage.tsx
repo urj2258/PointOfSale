@@ -59,7 +59,7 @@ export default function BackupLogsPage() {
         <p className="text-sm text-brand-text-muted mt-1">Audit trail for sync, export, and import actions.</p>
       </div>
 
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-6 space-y-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-6 space-y-4">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>

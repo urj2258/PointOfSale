@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from '../../services/api'
 import type { DayClosingReport, PaginatedResult } from '../../types'
 import Pagination from '../../components/ui/Pagination'
@@ -22,17 +22,28 @@ export default function DayClosingPage() {
   const [exporting, setExporting] = useState(false)
   const [exportDir, setExportDir] = useState<string | null>(null)
 
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const savedScrollRef = useRef(0)
+
   // Summary export state
   const [summaryExporting, setSummaryExporting] = useState(false)
   const [summaryFromDate, setSummaryFromDate] = useState('')  // dd/mm/yyyy (DateInput format)
   const [summaryToDate, setSummaryToDate] = useState('')      // dd/mm/yyyy (DateInput format)
 
   const load = useCallback(async () => {
+    savedScrollRef.current = scrollRef.current?.scrollTop ?? 0
     setLoading(true)
     const result = await api.dayClosing.list(page, 20)
     setData(result)
     setLoading(false)
   }, [page])
+
+  useEffect(() => {
+    if (!loading && savedScrollRef.current > 0) {
+      scrollRef.current?.scrollTo({ top: savedScrollRef.current })
+      savedScrollRef.current = 0
+    }
+  }, [loading])
 
   useEffect(() => { load() }, [load])
 
@@ -164,7 +175,7 @@ export default function DayClosingPage() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div ref={scrollRef} className="space-y-6">
       {/* ── Page header: title + existing per-day controls ── */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-brand-text-primary dark:text-white">Day Closing</h1>
@@ -175,23 +186,23 @@ export default function DayClosingPage() {
             </span>
           )}
           <button onClick={handleChangeDir}
-            className="px-3 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-white/30 dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
+            className="px-3 py-2 bg-white dark:bg-white/[0.08] text-brand-text-muted dark:text-gray-400 border border-[#D1D5DB] dark:border-white/[0.1] rounded-xl text-xs font-medium hover:opacity-90 transition-opacity">
             {exportDir ? 'Change Folder' : 'Set Folder'}
           </button>
           {/* Existing detailed per-day export — label is explicit to distinguish from summary */}
           <button onClick={handleExportExcel} disabled={exporting}
-            className="px-4 py-2 bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white border border-white/30 dark:border-white/[0.1] rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            className="px-4 py-2 bg-white dark:bg-white/[0.08] text-brand-text-primary dark:text-white border border-[#D1D5DB] dark:border-white/[0.1] rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
             {exporting ? 'Exporting...' : 'Export Today (Detailed)'}
           </button>
           <button onClick={handleGenerate} disabled={generating}
-            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
+            className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50">
             {generating ? 'Generating...' : "Generate Today's Report"}
           </button>
         </div>
       </div>
 
       {/* ── Summary export panel ── */}
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] p-4">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] p-4">
         <p className="text-sm font-semibold text-brand-text-primary dark:text-white mb-3">
           Export Summary Report
           <span className="ml-2 text-xs font-normal text-brand-text-muted">(one row per closing record · filters by created date)</span>
@@ -202,7 +213,7 @@ export default function DayClosingPage() {
             value={summaryFromDate}
             onChange={setSummaryFromDate}
             placeholder="From (dd/mm/yyyy)"
-            className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
+            className="px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] bg-white dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
           />
 
           {/* To date: minDate = fromDate so user can't pick an earlier end */}
@@ -211,7 +222,7 @@ export default function DayClosingPage() {
             onChange={setSummaryToDate}
             placeholder="To (dd/mm/yyyy)"
             minDate={parseDisplay(summaryFromDate)}
-            className="px-3 py-2 rounded-xl border border-white/30 dark:border-white/[0.1] bg-white/60 dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
+            className="px-3 py-2 rounded-xl border border-[#D1D5DB] dark:border-white/[0.1] bg-white dark:bg-white/[0.08] text-brand-text-primary dark:text-white text-sm focus:outline-none focus:ring-2 focus:ring-brand-primary w-40 cursor-pointer"
           />
 
           {/* Single smart export button */}
@@ -219,7 +230,7 @@ export default function DayClosingPage() {
             id="export-summary-btn"
             onClick={handleExportSummary}
             disabled={summaryExporting}
-            className="px-4 py-2 bg-brand-primary text-gray-900 rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
+            className="px-4 py-2 bg-[#6B7280] text-white rounded-xl text-sm font-medium hover:opacity-90 transition-opacity disabled:opacity-50"
           >
             {summaryExporting ? 'Exporting...' : 'Export Summary'}
           </button>
@@ -248,7 +259,7 @@ export default function DayClosingPage() {
       )}
 
       {/* ── Day closing reports table ── */}
-      <div className="rounded-2xl bg-white/40 dark:bg-white/[0.04] backdrop-blur-sm border border-white/30 dark:border-white/[0.06] overflow-hidden">
+      <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] overflow-hidden">
         {loading ? (
           <div className="text-center py-12 text-brand-text-muted">Loading...</div>
         ) : data && data.data.length === 0 ? (
