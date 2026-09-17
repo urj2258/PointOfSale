@@ -57,12 +57,11 @@ function validateField<K extends keyof Form>(field: K, value: string): string | 
   }
 }
 
+const INITIAL_FORM: Form = { name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' }
+const VALIDATABLE_FIELDS: (keyof Form)[] = ['name', 'phone', 'address', 'mill_name', 'obAmount']
+
 function isFormValid(form: Form): boolean {
-  return !validateField('name', form.name) &&
-    !validateField('phone', form.phone) &&
-    !validateField('address', form.address) &&
-    !validateField('mill_name', form.mill_name) &&
-    !validateField('obAmount', form.obAmount)
+  return !VALIDATABLE_FIELDS.some(field => validateField(field, form[field] as string))
 }
 
 function computeOpeningBalance(form: Form): number {
@@ -79,7 +78,7 @@ export default function VendorsPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Vendor | null>(null)
 
-  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
+  const [form, setForm] = useState<Form>(INITIAL_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -98,7 +97,7 @@ export default function VendorsPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', phone: '', address: '', mill_name: '', obAmount: '0', obDirection: 'mill_owes_us' })
+    setForm(INITIAL_FORM)
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -131,15 +130,17 @@ export default function VendorsPage() {
   }
 
   const handleSubmit = async () => {
-    const errors: FieldErrors = {
-      name: validateField('name', form.name),
-      phone: validateField('phone', form.phone),
-      address: validateField('address', form.address),
-      mill_name: validateField('mill_name', form.mill_name),
-      obAmount: validateField('obAmount', form.obAmount),
-    }
+    const errors = VALIDATABLE_FIELDS.reduce((acc, field) => {
+      acc[field] = validateField(field, form[field] as string)
+      return acc
+    }, {} as FieldErrors)
     setFieldErrors(errors)
-    setTouched({ name: true, phone: true, address: true, mill_name: true, obAmount: true })
+
+    const allTouched = VALIDATABLE_FIELDS.reduce((acc, field) => {
+      acc[field] = true
+      return acc
+    }, {} as Record<string, boolean>)
+    setTouched(allTouched)
 
     if (Object.values(errors).some(Boolean)) return
 

@@ -58,12 +58,16 @@ function validateField<K extends keyof Form>(field: K, value: string): string | 
   }
 }
 
+const INITIAL_FORM: Form = { name: '', phone: '', address: '', shop_name: '', obAmount: '0', obDirection: 'customer_owes_us' }
+const VALIDATABLE_FIELDS: (keyof Form)[] = ['name', 'phone', 'address', 'shop_name', 'obAmount']
+
 function isFormValid(form: Form): boolean {
-  return !validateField('name', form.name) &&
-    !validateField('phone', form.phone) &&
-    !validateField('address', form.address) &&
-    !validateField('shop_name', form.shop_name) &&
-    !validateField('obAmount', form.obAmount)
+  return !VALIDATABLE_FIELDS.some(field => validateField(field, form[field] as string))
+}
+
+function computeOpeningBalance(form: Form): number {
+  const amount = Number(form.obAmount) || 0
+  return form.obDirection === 'customer_owes_us' ? amount : -amount
 }
 
 export default function CustomersPage() {
@@ -75,7 +79,7 @@ export default function CustomersPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState<Customer | null>(null)
 
-  const [form, setForm] = useState<Form>({ name: '', phone: '', address: '', shop_name: '', obAmount: '0', obDirection: 'customer_owes_us' })
+  const [form, setForm] = useState<Form>(INITIAL_FORM)
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState('')
   const [touched, setTouched] = useState<Record<string, boolean>>({})
@@ -94,7 +98,7 @@ export default function CustomersPage() {
 
   const openCreate = () => {
     setEditing(null)
-    setForm({ name: '', phone: '', address: '', shop_name: '', obAmount: '0', obDirection: 'customer_owes_us' })
+    setForm(INITIAL_FORM)
     setFieldErrors({})
     setServerError('')
     setTouched({})
@@ -127,23 +131,24 @@ export default function CustomersPage() {
   }
 
   const handleSubmit = async () => {
-    const errors: FieldErrors = {
-      name: validateField('name', form.name),
-      phone: validateField('phone', form.phone),
-      address: validateField('address', form.address),
-      shop_name: validateField('shop_name', form.shop_name),
-      obAmount: validateField('obAmount' as any, form.obAmount),
-    }
+    const errors = VALIDATABLE_FIELDS.reduce((acc, field) => {
+      acc[field] = validateField(field, form[field] as string)
+      return acc
+    }, {} as FieldErrors)
     setFieldErrors(errors)
-    setTouched({ name: true, phone: true, address: true, shop_name: true, obAmount: true })
+
+    const allTouched = VALIDATABLE_FIELDS.reduce((acc, field) => {
+      acc[field] = true
+      return acc
+    }, {} as Record<string, boolean>)
+    setTouched(allTouched)
 
     if (Object.values(errors).some(Boolean)) return
 
     setServerError('')
     try {
       let result: any
-      const obAmount = Number(form.obAmount) || 0
-      const openingBalance = form.obDirection === 'customer_owes_us' ? obAmount : -obAmount
+      const openingBalance = computeOpeningBalance(form)
       if (editing) {
         result = await api.customers.update(editing.id, form.name.trim(), form.phone.trim(), form.address.trim(), form.shop_name.trim() || undefined, openingBalance)
       } else {
