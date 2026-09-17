@@ -7,6 +7,7 @@ import Pagination from '../../components/ui/Pagination'
 import SearchInput from '../../components/ui/SearchInput'
 import Modal from '../../components/ui/Modal'
 import ConfirmModal from '../../components/ui/ConfirmModal'
+import FormField from '../../components/ui/FormField'
 import toast from 'react-hot-toast'
 
 type Form = { name: string; phone: string; address: string; mill_name: string; obAmount: string; obDirection: 'mill_owes_us' | 'we_owe_mill' }
@@ -175,12 +176,7 @@ export default function VendorsPage() {
     { key: 'mill_name', label: 'Mill Name' },
   ]
 
-  const inputClass = (field: keyof Form) =>
-    `w-full px-3 py-2 rounded-xl border text-sm text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 focus:outline-none focus:ring-2 ${
-      fieldErrors[field]
-        ? 'border-red-400 focus:ring-red-400/40 bg-red-50 dark:bg-red-900/10'
-        : 'border-gray-200 dark:border-white/[0.1] bg-gray-50 dark:bg-white/[0.04] focus:ring-brand-primary/40'
-    }`
+
 
   return (
     <div className="space-y-6">
@@ -208,32 +204,49 @@ export default function VendorsPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Vendor' : 'Add Vendor'}>
         <div className="space-y-4">
           {serverError && <p className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{serverError}</p>}
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Name *</label>
-            <input type="text" value={form.name} onChange={(e) => setField('name', e.target.value)} onBlur={() => onBlur('name')}
-              className={inputClass('name')} placeholder="e.g. Ahmed Traders" />
-            {touched.name && fieldErrors.name && <p className="text-xs text-red-500 mt-1">{fieldErrors.name}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Phone *</label>
-            <input type="tel" value={form.phone} onChange={(e) => setField('phone', e.target.value)} onBlur={() => onBlur('phone')}
-              onKeyDown={(e) => { if (e.key.length === 1 && /[a-zA-Z]/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault() }}
-              onPaste={(e) => { e.preventDefault(); const input = e.target as HTMLInputElement; const start = input.selectionStart ?? input.value.length; const end = input.selectionEnd ?? input.value.length; const cleaned = (e.clipboardData.getData('text') || '').replace(/[^0-9+\-]/g, ''); setField('phone', input.value.slice(0, start) + cleaned + input.value.slice(end)); }}
-              className={inputClass('phone')} placeholder="e.g. 03XXXXXXXXX" inputMode="numeric" />
-            {touched.phone && fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Address *</label>
-            <input type="text" value={form.address} onChange={(e) => setField('address', e.target.value)} onBlur={() => onBlur('address')}
-              className={inputClass('address')} placeholder="e.g. Main Boulevard, Lahore" />
-            {touched.address && fieldErrors.address && <p className="text-xs text-red-500 mt-1">{fieldErrors.address}</p>}
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-1">Mill Name</label>
-            <input type="text" value={form.mill_name} onChange={(e) => setField('mill_name', e.target.value)} onBlur={() => onBlur('mill_name')}
-              className={inputClass('mill_name')} placeholder="e.g. Khan Textile Mill" />
-            {touched.mill_name && fieldErrors.mill_name && <p className="text-xs text-red-500 mt-1">{fieldErrors.mill_name}</p>}
-          </div>
+          <FormField
+            label="Name *"
+            type="text"
+            value={form.name}
+            onChange={(e) => setField('name', e.target.value)}
+            onBlur={() => onBlur('name')}
+            placeholder="e.g. Ahmed Traders"
+            error={fieldErrors.name}
+            touched={touched.name}
+          />
+          <FormField
+            label="Phone *"
+            type="tel"
+            value={form.phone}
+            onChange={(e) => setField('phone', e.target.value)}
+            onBlur={() => onBlur('phone')}
+            onKeyDown={(e) => { if (e.key.length === 1 && /[a-zA-Z]/.test(e.key) && !e.ctrlKey && !e.metaKey) e.preventDefault() }}
+            onPaste={(e) => { e.preventDefault(); const input = e.target as HTMLInputElement; const start = input.selectionStart ?? input.value.length; const end = input.selectionEnd ?? input.value.length; const cleaned = (e.clipboardData.getData('text') || '').replace(/[^0-9+\-]/g, ''); setField('phone', input.value.slice(0, start) + cleaned + input.value.slice(end)); }}
+            placeholder="e.g. 03XXXXXXXXX"
+            inputMode="numeric"
+            error={fieldErrors.phone}
+            touched={touched.phone}
+          />
+          <FormField
+            label="Address *"
+            type="text"
+            value={form.address}
+            onChange={(e) => setField('address', e.target.value)}
+            onBlur={() => onBlur('address')}
+            placeholder="e.g. Main Boulevard, Lahore"
+            error={fieldErrors.address}
+            touched={touched.address}
+          />
+          <FormField
+            label="Mill Name"
+            type="text"
+            value={form.mill_name}
+            onChange={(e) => setField('mill_name', e.target.value)}
+            onBlur={() => onBlur('mill_name')}
+            placeholder="e.g. Khan Textile Mill"
+            error={fieldErrors.mill_name}
+            touched={touched.mill_name}
+          />
           <div>
             <label className="block text-sm font-medium text-brand-text-primary dark:text-white mb-2">Opening Balance</label>
             <div className="flex gap-3 items-center">

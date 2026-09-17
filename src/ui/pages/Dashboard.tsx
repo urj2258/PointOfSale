@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '../services/api'
 import DateInput from '../components/ui/DateInput'
+import Card from '../components/ui/Card'
 
 type Period = 'day' | 'month' | 'year' | 'custom'
 
@@ -160,13 +161,13 @@ export default function Dashboard() {
               { label: 'Inventory Items',  value: stats.inventoryCount, color: 'text-purple-500', bg: 'bg-purple-500/10' },
               { label: 'Low Stock Items',  value: stats.lowStockCount,  color: 'text-orange-500', bg: 'bg-orange-500/10' },
             ].map(card => (
-              <div key={card.label} className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
+              <Card key={card.label}>
                 <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${card.bg} mb-3`}>
                   <span className={`text-sm font-bold ${card.color}`}>#</span>
                 </div>
                 <p className="text-xs text-brand-text-muted mb-0.5">{card.label}</p>
                 <p className={`text-2xl font-bold ${card.color}`}>{card.value.toLocaleString()}</p>
-              </div>
+              </Card>
             ))}
           </div>
 
@@ -198,7 +199,7 @@ export default function Dashboard() {
                 icon: '−',
               },
             ].map(card => (
-              <div key={card.label} className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
+              <Card key={card.label}>
                 <div className={`inline-flex items-center justify-center w-8 h-8 rounded-lg ${card.bg} mb-3`}>
                   <span className={`text-sm font-bold ${card.color}`}>{card.icon}</span>
                 </div>
@@ -211,11 +212,11 @@ export default function Dashboard() {
                     + Rs. {card.invoice.toLocaleString()} via invoices
                   </p>
                 )}
-              </div>
+              </Card>
             ))}
           </div>
 
-          <div className="rounded-2xl bg-brand-card dark:bg-white/[0.04] border-brand-border dark:border-white/[0.06] shadow-[0_16px_48px_-12px_rgba(0,0,0,0.2)] hover:-translate-y-1 hover:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.3)] transition-all duration-300 p-5">
+          <Card>
             <h2 className="text-base font-semibold text-brand-text-primary dark:text-white mb-4">Low Stock Alert</h2>
             <div className="space-y-1">
               {stats.lowStockItems.length === 0 && (
@@ -230,7 +231,7 @@ export default function Dashboard() {
                 </div>
               ))}
             </div>
-          </div>
+          </Card>
         </>
       )}
     </div>
