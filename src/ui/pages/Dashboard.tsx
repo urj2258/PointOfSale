@@ -148,7 +148,9 @@ export default function Dashboard() {
       )}
 
       {!loading && !stats && (
-        <div className="text-center py-12 text-brand-text-muted">Failed to load dashboard</div>
+        <div className="text-sm text-red-500 bg-red-50 dark:bg-red-900/20 px-4 py-3 rounded-xl text-center mx-auto max-w-md">
+          Failed to load dashboard
+        </div>
       )}
 
       {!loading && stats && (

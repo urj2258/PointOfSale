@@ -17,7 +17,7 @@ interface DataTableProps<T> {
 export default function DataTable<T extends Record<string, any>>({ columns, data, onEdit, onDelete, onRowClick, loading }: DataTableProps<T>) {
   if (loading) {
     return (
-      <div className="text-center py-12 text-brand-text-muted">
+      <div className="text-center py-12 text-brand-text-muted animate-pulse">
         Loading...
       </div>
     )
